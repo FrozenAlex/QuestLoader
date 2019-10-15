@@ -1,29 +1,130 @@
 #include <libmain.hpp>
-#include "log.hpp"
+#include <android/log.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <dirent.h>
+#include <linux/limits.h>
+#include <sys/sendfile.h>
+#include <sys/stat.h>
+#include <dlfcn.h>
+#include <errno.h>
+
 #include <cstddef>
 #include <cstdint>
 #include <span>
 #include <string>
 
 #include "jit/jit.hpp"
+#include "log.hpp"
 
 #include <sys/mman.h>
 
 using namespace modloader;
 
-namespace {
-    // there is *not* a good way to get the name lmao
-    std::string get_jni_class_name(JNIEnv* env, jclass klass) {
-        auto kl = env->GetObjectClass(klass);
-        auto mid = env->GetMethodID(kl, "getName", "()Ljava/lang/String;");
-        auto jstr = static_cast<jstring>(env->CallObjectMethod(klass, mid));
 
-        auto cstr = env->GetStringUTFChars(jstr, nullptr);
-        std::string name {cstr};
-        env->ReleaseStringUTFChars(jstr, cstr);
+#define MOD_PATH_FMT "/sdcard/Android/data/%s/files/mods/"
+#define MOD_TEMP_PATH_FMT "/data/data/%s/cache/curmod.so"
 
-        return name;
+char *modPath;
+char *modTempPath;
+
+char *trimWhitespace(char *str)
+{
+  char *end;
+  while(isspace((unsigned char)*str)) str++;
+  if(*str == 0)
+    return str;
+
+  end = str + strlen(str) - 1;
+  while(end > str && isspace((unsigned char)*end)) end--;
+
+  end[1] = '\0';
+
+  return str;
+}
+
+const int setDataDirs()
+{
+    FILE *cmdline = fopen("/proc/self/cmdline", "r");
+    if (cmdline) {
+        //not sure what the actual max is, but path_max should cover it
+        char application_id[PATH_MAX] = {0};
+        fread(application_id, sizeof(application_id), 1, cmdline);
+        fclose(cmdline);
+        trimWhitespace(application_id);
+        modTempPath = (char*)malloc(PATH_MAX);
+        modPath = (char*)malloc(PATH_MAX);
+        sprintf(modPath, MOD_PATH_FMT, application_id);
+        sprintf(modTempPath, MOD_TEMP_PATH_FMT, application_id);
+        return 0;
+    } else
+    {
+        return -1;
+    }    
+}
+
+int mkpath(char* file_path, mode_t mode) {
+    for (char* p = strchr(file_path + 1, '/'); p; p = strchr(p + 1, '/')) {
+        *p = '\0';
+        if (mkdir(file_path, mode) == -1) {
+            if (errno != EEXIST) {
+                *p = '/';
+                return -1;
+            }
+        }
+        *p = '/';
     }
+    return 0;
+}
+
+int load_mods()
+{
+    __android_log_write(ANDROID_LOG_INFO, "QuestHook", "Loading mods!");
+    if (setDataDirs() != 0)
+    {
+         __android_log_write(ANDROID_LOG_ERROR, "QuestHook", "Unable to determine data directories.");
+        return -1;
+    }
+    if (mkpath(modPath, 0) != 0)
+    {
+        __android_log_print(ANDROID_LOG_ERROR, "QuestHook", "Unable to access or create mod path at '%s'", modPath);
+        return -1;
+    }
+    if (mkpath(modTempPath, 0) != 0)
+    {
+        __android_log_print(ANDROID_LOG_ERROR, "QuestHook", "Unable to access or create mod temporary path at '%s'", modTempPath);
+        return -1;
+    }
+
+    struct dirent *dp;
+    DIR *dir = opendir(modPath);
+
+    while ((dp = readdir(dir)) != NULL)
+    {
+        if (strlen(dp->d_name) > 3 && !strcmp(dp->d_name + strlen(dp->d_name) - 3, ".so"))
+        {
+            char full_path[PATH_MAX];
+            strcpy(full_path, modPath);
+            strcat(full_path, dp->d_name);
+            __android_log_print(ANDROID_LOG_INFO, "QuestHook", "Loading mod: %s", full_path);
+            int infile = open(full_path, O_RDONLY);
+            off_t filesize = lseek(infile, 0, SEEK_END);
+            lseek(infile, 0, SEEK_SET);
+            unlink(modTempPath);
+            int outfile = open(modTempPath, O_CREAT | O_WRONLY);
+            sendfile(outfile, infile, 0, filesize);
+            close(infile);
+            close(outfile);
+            chmod(modTempPath, S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IWGRP | S_IXGRP);
+            dlopen(modTempPath, RTLD_NOW);
+        }
+    }
+    closedir(dir);
+    return 0;
 }
 
 extern "C" JNINativeInterface modloader_main(JavaVM* vm, JNIEnv* env, std::string_view loadSrc) noexcept {
@@ -31,25 +132,15 @@ extern "C" JNINativeInterface modloader_main(JavaVM* vm, JNIEnv* env, std::strin
 
     auto iface = jni::interface::make_passthrough_interface<JNINativeInterface>(&env->functions);
 
-    iface.RegisterNatives = [](JNIEnv* env, jclass klass, JNINativeMethod const* methods_ptr, jint count) {
-        using namespace jni::interface;
-        std::span methods {const_cast<JNINativeMethod*>(methods_ptr), count};
-        int success = mem::protect(methods, mem::protection::read_write_execute); // ensure the protection is right
-        // the reason such a broad protection level is set is so that i don't accidentally mark some bit of code not executable
-
-        logf(ANDROID_LOG_DEBUG, "mem::protect returned %d", success);
-
-        // call it with interface_original so any modifications previously made to *this* JNIEnv don't affect it
-        auto clsname = get_jni_class_name(interface_original(*env), klass);
-
-        for (auto& method : methods) {
-            logf(ANDROID_LOG_VERBOSE, "Unity registering native on %s: %s %s @ 0x%p", 
-                    clsname.data(), method.name, method.signature, method.fnPtr);
-            method.fnPtr = jit::make_native_wrapper(method.fnPtr, method.name);
-        }
-
-        return invoke_original(env, &JNINativeInterface::RegisterNatives, klass, methods_ptr, count);
-    };
+    __android_log_write(ANDROID_LOG_INFO, "QuestHook", "Welcome!");
+    if (load_mods() != 0)
+    {
+        __android_log_write(ANDROID_LOG_ERROR, "QuestHook", "QuestHook failed to initialize, mods will not load.");
+    }
+    else
+    {
+        __android_log_write(ANDROID_LOG_INFO, "QuestHook", "Done loading mods!");
+    }
 
     return iface;
 }
