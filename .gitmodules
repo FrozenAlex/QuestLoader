@@ -1,6 +1,3 @@
 [submodule "RiDyL"]
     path = RiDyL
     url = https://github.com/nike4613/RiDyL.git
-[submodule "Apkifier"]
-    path = tools/Apkifier
-    url = https://github.com/emulamer/Apkifier.git
