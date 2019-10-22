@@ -81,6 +81,10 @@ int mkpath(char* file_path, mode_t mode) {
     return 0;
 }
 
+extern "C" void modloader_preload() noexcept {
+    log(ANDROID_LOG_VERBOSE, "modloader_preload called (should be really early)");
+}
+
 int load_mods()
 {
     __android_log_write(ANDROID_LOG_INFO, "QuestHook", "Loading mods!");
@@ -149,5 +153,6 @@ extern "C" void modloader_accept_unity_handle(void* uhandle) noexcept {
     logf(ANDROID_LOG_VERBOSE, "modloader_accept_unity_handle called with uhandle: 0x%p", uhandle);
 }
 
+CHECK_MODLOADER_PRELOAD;
 CHECK_MODLOADER_MAIN;
 CHECK_MODLOADER_ACCEPT_UNITY_HANDLE;
