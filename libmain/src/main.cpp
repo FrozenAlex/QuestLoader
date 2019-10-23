@@ -23,7 +23,7 @@ extern "C" jint LIBMAIN_EXPORT JNI_OnLoad(JavaVM* vm, void*) {
     auto ret = env->RegisterNatives(klass, NativeLoader_bindings.data(), NativeLoader_bindings.size());
 
     if (ret < 0) {
-        logf(ANDROID_LOG_WARN, "RegisterNatives failed with %d", ret);
+        logfp(ANDROID_LOG_WARN, "RegisterNatives failed with %d", ret);
 
         env->FatalError("com/unity3d/player/NativeLoader"); // this is such a useless fucking error message because the original libmain does this
 

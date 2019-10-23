@@ -35,7 +35,7 @@ JNIEnv* jni::interface::get_patched_env(JNIEnv* env) noexcept {
     if (reinterpret_cast<JNIEnv const*>(&interface_extra<JNINativeInterface>(env->functions)) == env)
         return env; // this is only the case when this is a constructed env
 
-    logf(ANDROID_LOG_DEBUG, "Looking up patched JNIEnv for 0x%p", env);
+    logfp(ANDROID_LOG_DEBUG, "Looking up patched JNIEnv for 0x%p", env);
 
     auto eptr = envPtrs.find(env);
     if (eptr == envPtrs.end()) {
@@ -45,11 +45,11 @@ JNIEnv* jni::interface::get_patched_env(JNIEnv* env) noexcept {
         interface_extra<JNINativeInterface>(interf) = interf;
         auto envptr = reinterpret_cast<JNIEnv*>(&interface_extra<JNINativeInterface>(interf));
         
-        logf(ANDROID_LOG_DEBUG, "Created new patched JNIEnv at 0x%p", envptr);
+        logfp(ANDROID_LOG_DEBUG, "Created new patched JNIEnv at 0x%p", envptr);
 
         eptr = envPtrs.insert({env, envptr}).first;
     } else 
-        logf(ANDROID_LOG_DEBUG, "Found patched JNIEnv at 0x%p", eptr->second);
+        logfp(ANDROID_LOG_DEBUG, "Found patched JNIEnv at 0x%p", eptr->second);
 
     return eptr->second;
 }
@@ -64,7 +64,7 @@ void jni::modloader::preload() noexcept {
 
     libModLoader = dlopen(modloaderso.data(), RTLD_LAZY);
     if (libUnityHandle == nullptr) {
-        logf(ANDROID_LOG_WARN, "Could not load libmodloader.so: %s", dlerror());
+        logfp(ANDROID_LOG_WARN, "Could not load libmodloader.so: %s", dlerror());
         return;
     }
 
@@ -72,7 +72,7 @@ void jni::modloader::preload() noexcept {
 
     auto pre = reinterpret_cast<modloader::preload_t*>(dlsym(libModLoader, "modloader_preload"));
     if (pre == nullptr) {
-        logf(ANDROID_LOG_WARN, "libmodloader does not have modloader_preload: %s", dlerror());
+        logfp(ANDROID_LOG_WARN, "libmodloader does not have modloader_preload: %s", dlerror());
         return;
     }
 
@@ -99,7 +99,7 @@ jboolean jni::load(JNIEnv* env, jobject klass, jstring str) noexcept {
     if (libUnityHandle != nullptr)
         return true;
 
-    logf(ANDROID_LOG_VERBOSE, "Searching in %s", soname);
+    logfp(ANDROID_LOG_VERBOSE, "Searching in %s", soname);
 
     JavaVM* vm = nullptr;
 
@@ -119,12 +119,12 @@ jboolean jni::load(JNIEnv* env, jobject klass, jstring str) noexcept {
         *endptr = 0;
         
         if (libModLoader == nullptr) {
-            logf(ANDROID_LOG_VERBOSE, "libmodloader not preloaded; Looking for libmodloader at %s", soname);
+            logfp(ANDROID_LOG_VERBOSE, "libmodloader not preloaded; Looking for libmodloader at %s", soname);
 
             libModLoader = dlopen(soname, RTLD_LAZY);
             if (libModLoader == nullptr) {
                 auto err = dlerror();
-                logf(ANDROID_LOG_WARN, "Could not load libmodloader.so from %s: %s", soname, err);
+                logfp(ANDROID_LOG_WARN, "Could not load libmodloader.so from %s: %s", soname, err);
                 goto loadLibUnity;
             }
         }
@@ -133,7 +133,7 @@ jboolean jni::load(JNIEnv* env, jobject klass, jstring str) noexcept {
 
         auto main = reinterpret_cast<modloader::main_t*>(dlsym(libModLoader, "modloader_main"));
         if (main == nullptr) {
-            logf(ANDROID_LOG_WARN, "libmodloader does not have modloader_main: %s", dlerror());
+            logfp(ANDROID_LOG_WARN, "libmodloader does not have modloader_main: %s", dlerror());
             goto loadLibUnity;
         }
 
@@ -195,7 +195,7 @@ jboolean jni::load(JNIEnv* env, jobject klass, jstring str) noexcept {
             libUnityHandle = dlopen(unityso.data(), RTLD_LAZY);
             if (libUnityHandle == nullptr) {
                 auto err = dlerror();
-                logf(ANDROID_LOG_WARN, "Could not load libunity.so from %s: %s", soname, err);
+                logfp(ANDROID_LOG_WARN, "Could not load libunity.so from %s: %s", soname, err);
                 std::array<char, 0x400> message = {0}; // this is what the original libmain allocates, so lets hope its enough
                                                     // and doesn't use all of the rest of our stack space
                 snprintf(message.data(), message.size(), "Unable to load library: %s [%s]", soname, err);
@@ -208,7 +208,7 @@ jboolean jni::load(JNIEnv* env, jobject klass, jstring str) noexcept {
     if (libModLoader != nullptr) {
         auto acceptUHandle = reinterpret_cast<modloader::accept_unity_handle_t*>(dlsym(libModLoader, "modloader_accept_unity_handle"));
         if (acceptUHandle == nullptr) {
-            logf(ANDROID_LOG_INFO, "libmodloader does not have modloader_accept_unity_handle: %s", dlerror());
+            logfp(ANDROID_LOG_INFO, "libmodloader does not have modloader_accept_unity_handle: %s", dlerror());
         } else {
             log(ANDROID_LOG_VERBOSE, "Calling libmodloader's modloader_accept_unity_handle");
 
@@ -231,7 +231,7 @@ jboolean jni::load(JNIEnv* env, jobject klass, jstring str) noexcept {
         }
     }
 
-    logf(ANDROID_LOG_INFO, "Successfully loaded and initialized %s", soname);
+    logfp(ANDROID_LOG_INFO, "Successfully loaded and initialized %s", soname);
 
     return libUnityHandle != nullptr;
 }
@@ -256,7 +256,7 @@ jboolean jni::unload(JNIEnv* env, jobject klass) noexcept {
     int code = dlclose(libUnityHandle);
 
     if (code != 0) {
-        logf(ANDROID_LOG_WARN, "Error occurred closing libunity: %s", dlerror());
+        logfp(ANDROID_LOG_WARN, "Error occurred closing libunity: %s", dlerror());
     } else {
         log(ANDROID_LOG_VERBOSE, "Successfully closed libunity");
     }
@@ -264,7 +264,7 @@ jboolean jni::unload(JNIEnv* env, jobject klass) noexcept {
     if (libModLoader != nullptr) {
         code = dlclose(libModLoader);
         if (code != 0) {
-            logf(ANDROID_LOG_WARN, "Error occurred closing libModLoader: %s", dlerror());
+            logfp(ANDROID_LOG_WARN, "Error occurred closing libModLoader: %s", dlerror());
         } else {
             log(ANDROID_LOG_VERBOSE, "Successfully closed libModLoader");
         }
