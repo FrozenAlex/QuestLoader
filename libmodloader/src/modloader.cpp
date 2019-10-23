@@ -90,7 +90,7 @@ int mkpath(char* file_path, mode_t mode) {
 // TODO Find a way to avoid calling constructor on mods that have offsetless hooks in constructor
 // Loads the mod at the given full_path
 // Returns the dlopened handle
-void* load_mod(const char* full_path) {
+void* construct_mod(const char* full_path) {
     // Calls the constructor on the mod by loading it
     log_print(INFO, "Loading mod: %s", full_path);
     int infile = open(full_path, O_RDONLY);
@@ -107,6 +107,7 @@ void* load_mod(const char* full_path) {
 
 // Calls the init() function on the mod, if it exists
 // This will be before il2cpp functionality is available
+// Called in preload
 void init_mod(void* handle) {
     void (*init)(void);
     *(void**)(&init) = dlsym(handle, "init");
@@ -115,8 +116,20 @@ void init_mod(void* handle) {
     }
 }
 
+// Calls the preload() function on the mod, if it exists
+// This will be before il2cpp functionality is available
+// Called in accept_unity_handle
+void preload_mod(void* handle) {
+    void (*preload)(void);
+    *(void**)(&preload) = dlsym(handle, "preload");
+    if (preload) {
+        preload();
+    }
+}
+
 // Calls the load() function on the mod, if it exists
 // This will be after il2cpp functionality is available
+// Called immediately after il2cpp_init
 void load_mod(void* handle) {
     void (*load)(void);
     *(void**)(&load) = dlsym(handle, "load");
@@ -145,7 +158,7 @@ void construct_mods() noexcept {
             char full_path[PATH_MAX];
             strcpy(full_path, modPath);
             strcat(full_path, dp->d_name);
-            auto modHandle = load_mod(full_path);
+            auto modHandle = construct_mod(full_path);
             modhandles.push_back(modHandle);
             names.push_back(full_path);
         }
@@ -173,6 +186,26 @@ void init_mods() noexcept {
     }
 
     log_print(INFO, "Initialized all mods!");
+}
+
+// Calls the preload functions on all constructed mods
+void preload_mods() noexcept {
+    if (!constructed) {
+        log_print(ERROR, "Tried to preload mods, but they are not yet constructed!");
+        return;
+    }
+    log_print(INFO, "Preloading all mods!");
+
+    auto n = names.begin();
+    auto h = modhandles.begin();
+    while (n != names.end() && h != modhandles.end()) {
+        log_print(INFO, "Preloading mod: %s", *n);
+        preload_mod(*h);
+        ++h;
+        ++n;
+    }
+
+    log_print(INFO, "Preloading all mods!");
 }
 
 // Calls the load functions on all constructed mods
@@ -246,6 +279,8 @@ extern "C" JNINativeInterface modloader_main(JavaVM* vm, JNIEnv* env, std::strin
 
 extern "C" void modloader_accept_unity_handle(void* uhandle) noexcept {
     logpf(ANDROID_LOG_VERBOSE, "modloader_accept_unity_handle called with uhandle: 0x%p", uhandle);
+
+    preload_mods();
 
     imagehandle = dlopen(IL2CPP_SO_PATH, RTLD_LOCAL | RTLD_LAZY);
     *(void**)(&il2cppInit) = dlsym(imagehandle, "il2cpp_init");
