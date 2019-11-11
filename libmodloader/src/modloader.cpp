@@ -19,23 +19,78 @@
 #include <span>
 #include <string>
 
+#include <jni.h>
+// #include "jit/jit.hpp"
 #include "log.hpp"
 
 #include <sys/mman.h>
 
 #include "../../../beatsaber-hook/shared/inline-hook/inlineHook.h"
 #include "../../../beatsaber-hook/shared/utils/utils.h"
+#include "../../../beatsaber-hook/shared/utils/il2cpp-utils.hpp"
+
 #include "../../../beatsaber-hook/shared/inline-hook/And64InlineHook.hpp"
-#include "modloader.hpp"
+
+// using namespace modloader;
 
 #undef TAG
 #define TAG "libmodloader"
 
 #define MOD_PATH_FMT "/sdcard/Android/data/%s/files/mods/"
-#define MOD_TEMP_PATH_FMT "/data/data/%s/cache/curmod.so"
+#define MOD_TEMP_PATH_FMT "/data/data/%s/cache/"
 
 char *modPath;
 char *modTempPath;
+
+static JavaVM* vm = nullptr;
+
+static jobject getActivityFromUnityPlayerInternal(JNIEnv *env) {
+    jclass clazz = env->FindClass("com/unity3d/player/UnityPlayer");
+    if (clazz == NULL) return nullptr;
+    jfieldID actField = env->GetStaticFieldID(clazz, "currentActivity", "Landroid/app/Activity;");
+    if (actField == NULL) return nullptr;
+    return env->GetStaticObjectField(clazz, actField);
+}
+
+static jobject getActivityFromUnityPlayer(JNIEnv *env) {
+    jobject activity = getActivityFromUnityPlayerInternal(env);
+    if (activity == NULL) {
+        if (env->ExceptionCheck()) env->ExceptionDescribe();
+        logpf(ANDROID_LOG_ERROR, "libmain.getActivityFromUnityPlayer failed! See 'System.err' tag.");
+        env->ExceptionClear();
+    }
+    return activity;
+}
+
+static bool ensurePermsInternal(JNIEnv* env, jobject activity) {
+    jclass clazz = env->FindClass("com/unity3d/player/UnityPlayerActivity");
+    if (clazz == NULL) return false;
+    jmethodID checkSelfPermission = env->GetMethodID(clazz, "checkSelfPermission", "(Ljava/lang/String;)I");
+    if (checkSelfPermission == NULL) return false;
+    const jstring perm = env->NewStringUTF("android.permission.WRITE_EXTERNAL_STORAGE");
+    jint hasPerm = env->CallIntMethod(activity, checkSelfPermission, perm);
+    logpf(ANDROID_LOG_DEBUG, "checkSelfPermission(WRITE_EXTERNAL_STORAGE) returned: %i", hasPerm);
+    if (hasPerm != 0) {
+        jmethodID requestPermissions = env->GetMethodID(clazz, "requestPermissions", "([Ljava/lang/String;I)V");
+        if (requestPermissions == NULL) return false;
+        jclass stringClass = env->FindClass("java/lang/String");
+        jobjectArray arr = env->NewObjectArray(1, stringClass, perm);
+        jint requestCode = 21326;  // the number in the alphabet for each letter in BMBF (B=2, M=13, F=6)
+        logpf(ANDROID_LOG_INFO, "Calling requestPermissions!");
+        env->CallVoidMethod(activity, requestPermissions, arr, requestCode);
+        if (env->ExceptionCheck()) return false;
+    }
+    return true;
+}
+
+static bool ensurePerms(JNIEnv* env, jobject activity) {
+    if (ensurePermsInternal(env, activity)) return true;
+
+    if (env->ExceptionCheck()) env->ExceptionDescribe();
+    logpf(ANDROID_LOG_ERROR, "libmain.ensurePerms failed! See 'System.err' tag.");
+    env->ExceptionClear();
+    return false;
+}
 
 char *trimWhitespace(char *str)
 {
@@ -95,13 +150,19 @@ void* construct_mod(const char* full_path) {
     int infile = open(full_path, O_RDONLY);
     off_t filesize = lseek(infile, 0, SEEK_END);
     lseek(infile, 0, SEEK_SET);
-    unlink(modTempPath);
-    int outfile = open(modTempPath, O_CREAT | O_WRONLY);
+
+    const char* filename = basename(full_path);
+    std::string temp_path(modTempPath);
+    temp_path.append(filename);
+
+    int outfile = open(temp_path.c_str(), O_CREAT | O_WRONLY);
     sendfile(outfile, infile, 0, filesize);
     close(infile);
     close(outfile);
-    chmod(modTempPath, S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IWGRP | S_IXGRP);
-    return dlopen(modTempPath, RTLD_NOW);
+    chmod(temp_path.c_str(), S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IWGRP | S_IXGRP);
+    auto ret = dlopen(temp_path.c_str(), RTLD_NOW);
+    unlink(temp_path.c_str());
+    return ret;
 }
 
 // Calls the init() function on the mod, if it exists
@@ -254,8 +315,11 @@ extern "C" void modloader_preload() noexcept {
     construct_mods();
 }
 
-extern "C" JNINativeInterface modloader_main(JavaVM* vm, JNIEnv* env, std::string_view loadSrc) noexcept {
-    logpf(ANDROID_LOG_VERBOSE, "modloader_main called with vm: 0x%p, env: 0x%p, loadSrc: %s", vm, env, loadSrc.data());
+extern "C" JNINativeInterface modloader_main(JavaVM* v, JNIEnv* env, std::string_view loadSrc) noexcept {
+    logpf(ANDROID_LOG_VERBOSE, "modloader_main called with vm: 0x%p, env: 0x%p, loadSrc: %s", v, env, loadSrc.data());
+
+    jobject activity = getActivityFromUnityPlayer(env);
+    if (activity) ensurePerms(env, activity);
 
     auto iface = jni::interface::make_passthrough_interface<JNINativeInterface>(&env->functions);
 
