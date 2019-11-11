@@ -9,4 +9,4 @@ class ModContext
         ModContext(std::string path_, void* handle_) : path(path_), handle(handle_) {}
         std::string path;
         void* handle;
-}
+};
