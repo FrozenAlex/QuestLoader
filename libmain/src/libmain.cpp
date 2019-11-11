@@ -64,7 +64,7 @@ void jni::modloader::preload() noexcept {
 
     libModLoader = dlopen(modloaderso.data(), RTLD_LAZY);
     if (libModLoader == nullptr) {
-        logf(ANDROID_LOG_WARN, "Could not load libmodloader.so: %s", dlerror());
+        logfp(ANDROID_LOG_WARN, "Could not load libmodloader.so: %s", dlerror());
         return;
     }
 
@@ -72,7 +72,7 @@ void jni::modloader::preload() noexcept {
 
     auto pre = reinterpret_cast<modloader::preload_t*>(dlsym(libModLoader, "modloader_preload"));
     if (pre == nullptr) {
-        logf(ANDROID_LOG_WARN, "libmodloader does not have modloader_preload: %s", dlerror());
+        logfp(ANDROID_LOG_WARN, "libmodloader does not have modloader_preload: %s", dlerror());
         return;
     }
 
@@ -119,7 +119,7 @@ jboolean jni::load(JNIEnv* env, jobject klass, jstring str) noexcept {
         *endptr = 0;
         
         if (libModLoader == nullptr) {
-            logf(ANDROID_LOG_VERBOSE, "libmodloader not preloaded; Looking for libmodloader at %s", soname);
+            logfp(ANDROID_LOG_VERBOSE, "libmodloader not preloaded; Looking for libmodloader at %s", soname);
 
             libModLoader = dlopen(soname, RTLD_LAZY);
             if (libModLoader == nullptr) {
