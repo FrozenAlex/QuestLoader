@@ -162,6 +162,7 @@ void* construct_mod(const char* full_path) {
     chmod(temp_path.c_str(), S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IWGRP | S_IXGRP);
     auto ret = dlopen(temp_path.c_str(), RTLD_NOW);
     unlink(temp_path.c_str());
+    logpf(ANDROID_LOG_INFO, "Constructed mod: %s with pointer to dlopened handle: %p", full_path, ret);
     return ret;
 }
 
@@ -257,7 +258,7 @@ void preload_mods() noexcept {
         preload_mod(mod.second);
     }
 
-    logpf(ANDROID_LOG_INFO, "Preloading all mods!");
+    logpf(ANDROID_LOG_INFO, "Preloaded all mods!");
 }
 
 // Calls the load functions on all constructed mods
