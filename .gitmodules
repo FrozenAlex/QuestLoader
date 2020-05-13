@@ -4,3 +4,6 @@
 [submodule "tools/Apkifier"]
 	path = tools/Apkifier
 	url = https://github.com/emulamer/Apkifier.git
+[submodule "beatsaber-hook"]
+	path = beatsaber-hook
+	url = https://github.com/sc2ad/beatsaber-hook
