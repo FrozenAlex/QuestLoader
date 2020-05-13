@@ -14,8 +14,9 @@ class Mod
     public:
         static std::vector<Mod> mods;
         static bool constructed;
-        Mod(std::string path, void *handle_) : pathName(path), handle(handle_) {}
-        bool success;
+        Mod(std::string name_, std::string path, void *handle_) : name(name_), pathName(path), handle(handle_) {}
+        bool loaded;
+        std::string name;
         std::string pathName;
         void init();
         void load();

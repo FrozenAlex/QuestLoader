@@ -192,6 +192,7 @@ void Mod::load() {
     if (load_func) {
         load_func();
     }
+    loaded = true;
 }
 
 void construct_mods(std::string_view modloaderPath) noexcept {
@@ -236,16 +237,16 @@ void construct_mods(std::string_view modloaderPath) noexcept {
     // modloader
     // libs folder
     // files folder
+    std::string newPath = std::string(modloaderPath.data()) + ":" + libsPath + ":" + modPath;
     char *existingLDPath = getenv("LD_LIBRARY_PATH");
-    std::string existingPath = std::string(modloaderPath.data()) + ":" + libsPath + ":" + modPath;
     if (existingLDPath != NULL) {
-        logpf(ANDROID_LOG_DEBUG, "New LD_LIBRARY_PATH: %s", existingPath.c_str());
-        existingPath = std::string(existingLDPath) + ":" + existingPath;
+        logpf(ANDROID_LOG_DEBUG, "New LD_LIBRARY_PATH: %s", newPath.c_str());
+        newPath = std::string(existingLDPath) + ":" + newPath;
     } else {
         logpf(ANDROID_LOG_DEBUG, "Existing LD_LIBRARY_PATH does not exist!");
     }
-    logpf(ANDROID_LOG_DEBUG, "New LD_LIBRARY_PATH: %s", existingPath.c_str());
-    setenv("LD_LIBRARY_PATH", existingPath.c_str(), 1);
+    logpf(ANDROID_LOG_DEBUG, "New LD_LIBRARY_PATH: %s", newPath.c_str());
+    setenv("LD_LIBRARY_PATH", newPath.c_str(), 1);
 
     while ((dp = readdir(dir)) != NULL)
     {
@@ -254,7 +255,7 @@ void construct_mods(std::string_view modloaderPath) noexcept {
             std::string full_path(modPath);
             full_path.append(dp->d_name);
             auto modHandle = construct_mod(full_path.c_str());
-            Mod::mods.push_back(Mod(full_path, modHandle));
+            Mod::mods.push_back(Mod(dp->d_name, full_path, modHandle));
         }
     }
     closedir(dir);
@@ -316,7 +317,6 @@ MAKE_HOOK(il2cppInitHook, NULL, void, const char* domain_name)
 
 extern "C" void modloader_preload() noexcept {
     logpf(ANDROID_LOG_VERBOSE, "modloader_preload called (should be really early)");
-
     logpf(ANDROID_LOG_INFO, "Welcome!");
 }
 
