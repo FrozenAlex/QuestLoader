@@ -195,6 +195,7 @@ void Mod::load() {
 }
 
 void construct_mods(std::string_view modloaderPath) noexcept {
+    logpf(ANDROID_LOG_DEBUG, "Constructing mods from modloader path: '%s", modloaderPath.data());
     bool modReady = true;
     if (setDataDirs() != 0)
     {
@@ -236,10 +237,10 @@ void construct_mods(std::string_view modloaderPath) noexcept {
     // libs folder
     // files folder
     char *existingLDPath = getenv("LD_LIBRARY_PATH");
-    std::string existingPath = std::string(":") + modloaderPath.data() + ":" + libsPath + ":" + modPath;
+    std::string existingPath = std::string(modloaderPath.data()) + ":" + libsPath + ":" + modPath;
     if (existingLDPath != NULL) {
         logpf(ANDROID_LOG_DEBUG, "New LD_LIBRARY_PATH: %s", existingPath.c_str());
-        existingPath = std::string(existingLDPath) + existingPath;
+        existingPath = std::string(existingLDPath) + ":" + existingPath;
     } else {
         logpf(ANDROID_LOG_DEBUG, "Existing LD_LIBRARY_PATH does not exist!");
     }
