@@ -171,11 +171,12 @@ void* construct_mod(const char* full_path) {
 // This will be before il2cpp functionality is available
 // Called in preload
 void Mod::init() {
-    logpf(ANDROID_LOG_INFO, "Initializing mod: %s", pathName.c_str());
+    logpf(ANDROID_LOG_INFO, "Initializing mod: %s, handle: %p", pathName.c_str(), handle);
     if (!init_loaded) {
         *(void**)(&init_func) = dlsym(handle, "init");
         init_loaded = true;
     }
+    logpf(ANDROID_LOG_VERBOSE, "Calling init function: %p", init_func);
     if (init_func) {
         init_func();
     }
@@ -256,6 +257,7 @@ void construct_mods(std::string_view modloaderPath) noexcept {
             std::string full_path(modPath);
             full_path.append(dp->d_name);
             auto modHandle = construct_mod(full_path.c_str());
+            logpf(ANDROID_LOG_VERBOSE, "Created mod with name: %s, path: %s, handle: %p", dp->d_name, full_path.c_str(), modHandle);
             Mod::mods.emplace_back(Mod(dp->d_name, full_path, modHandle));
         }
     }
