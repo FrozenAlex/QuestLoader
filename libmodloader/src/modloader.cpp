@@ -162,7 +162,7 @@ void* construct_mod(const char* full_path) {
     close(infile);
     close(outfile);
     chmod(temp_path.c_str(), S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IWGRP | S_IXGRP);
-    auto ret = dlopen(temp_path.c_str(), RTLD_NOW | RTLD_LOCAL);
+    auto *ret = dlopen(temp_path.c_str(), RTLD_NOW | RTLD_LOCAL);
     unlink(temp_path.c_str());
     return ret;
 }
@@ -259,7 +259,7 @@ void construct_mods(std::string_view modloaderPath) noexcept {
         {
             std::string full_path(modPath);
             full_path.append(dp->d_name);
-            auto modHandle = construct_mod(full_path.c_str());
+            auto *modHandle = construct_mod(full_path.c_str());
             logpf(ANDROID_LOG_VERBOSE, "Created mod with name: %s, path: %s, handle: %p", dp->d_name, full_path.c_str(), modHandle);
             Mod::mods.emplace_back(dp->d_name, full_path, modHandle);
         }
@@ -284,7 +284,7 @@ void init_mods() noexcept {
     }
     logpf(ANDROID_LOG_INFO, "Initializing all mods!");
 
-    for (auto mod : Mod::mods) {
+    for (auto& mod : Mod::mods) {
         mod.init_mod();
     }
 
@@ -299,7 +299,7 @@ void load_mods() noexcept {
     }
     logpf(ANDROID_LOG_INFO, "Loading all mods!");
 
-    for (auto mod : Mod::mods) {
+    for (auto& mod : Mod::mods) {
         mod.load_mod();
     }
 
