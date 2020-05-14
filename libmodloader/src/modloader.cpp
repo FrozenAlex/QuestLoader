@@ -162,7 +162,7 @@ void* construct_mod(const char* full_path) {
     close(infile);
     close(outfile);
     chmod(temp_path.c_str(), S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IWGRP | S_IXGRP);
-    auto ret = dlopen(temp_path.c_str(), RTLD_NOW);
+    auto ret = dlopen(temp_path.c_str(), RTLD_NOW | RTLD_LOCAL);
     unlink(temp_path.c_str());
     return ret;
 }
@@ -170,14 +170,17 @@ void* construct_mod(const char* full_path) {
 // Calls the init() function on the mod, if it exists
 // This will be before il2cpp functionality is available
 // Called in preload
-void Mod::init() {
+void Mod::init_mod() {
     logpf(ANDROID_LOG_INFO, "Initializing mod: %s, handle: %p", pathName.c_str(), handle);
     if (!init_loaded) {
         *(void**)(&init_func) = dlsym(handle, "init");
         init_loaded = true;
     }
     logpf(ANDROID_LOG_VERBOSE, "Calling init function: %p", init_func);
-    if (init_func) {
+    if (init_loaded && init_func) {
+        Dl_info info;
+        dladdr((void *)init_func, &info);
+        logpf(ANDROID_LOG_VERBOSE, "dladdr of init function base: %p name: %s", info.dli_fbase, info.dli_sname);
         init_func();
     }
 }
@@ -185,13 +188,13 @@ void Mod::init() {
 // Calls the load() function on the mod, if it exists
 // This will be after il2cpp functionality is available
 // Called immediately after il2cpp_init
-void Mod::load() {
+void Mod::load_mod() {
     logpf(ANDROID_LOG_INFO, "Loading mod: %s", pathName.c_str());
     if (!load_loaded) {
         *(void**)(&load_func) = dlsym(handle, "load");
         load_loaded = true;
     }
-    if (load_func) {
+    if (load_loaded && load_func) {
         load_func();
     }
     loaded = true;
@@ -258,13 +261,15 @@ void construct_mods(std::string_view modloaderPath) noexcept {
             full_path.append(dp->d_name);
             auto modHandle = construct_mod(full_path.c_str());
             logpf(ANDROID_LOG_VERBOSE, "Created mod with name: %s, path: %s, handle: %p", dp->d_name, full_path.c_str(), modHandle);
-            Mod::mods.emplace_back(Mod(dp->d_name, full_path, modHandle));
+            Mod::mods.emplace_back(dp->d_name, full_path, modHandle);
         }
     }
     closedir(dir);
     if (existingLDPath == NULL) {
+        logpf(ANDROID_LOG_VERBOSE, "Unsetting LD_LIBRARY_PATH!");
         unsetenv("LD_LIBRARY_PATH");
     } else {
+        logpf(ANDROID_LOG_VERBOSE, "Resetting LD_LIBRARY_PATH to: %s", existingLDPath);
         setenv("LD_LIBRARY_PATH", existingLDPath, 1);
     }
     Mod::constructed = true;
@@ -280,7 +285,7 @@ void init_mods() noexcept {
     logpf(ANDROID_LOG_INFO, "Initializing all mods!");
 
     for (auto mod : Mod::mods) {
-        mod.init();
+        mod.init_mod();
     }
 
     logpf(ANDROID_LOG_INFO, "Initialized all mods!");
@@ -295,7 +300,7 @@ void load_mods() noexcept {
     logpf(ANDROID_LOG_INFO, "Loading all mods!");
 
     for (auto mod : Mod::mods) {
-        mod.load();
+        mod.load_mod();
     }
 
     logpf(ANDROID_LOG_INFO, "Loaded all mods!");

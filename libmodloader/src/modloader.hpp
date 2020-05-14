@@ -19,12 +19,12 @@ class Mod
         bool loaded;
         std::string name;
         std::string pathName;
-        void init();
-        void load();
+        void init_mod();
+        void load_mod();
     private:
         void *handle;
-        bool init_loaded;
-        void (*init_func)(void);
-        bool load_loaded;
-        void (*load_func)(void);
+        bool init_loaded = false;
+        void (*init_func)(void) = NULL;
+        bool load_loaded = false;
+        void (*load_func)(void) = NULL;
 };
