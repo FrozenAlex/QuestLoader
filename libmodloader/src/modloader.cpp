@@ -27,6 +27,7 @@
 #include <sys/mman.h>
 #include <dlfcn.h>
 #include "../../beatsaber-hook/shared/utils/utils.h"
+#include <libgen.h>
 
 // using namespace modloader;
 
@@ -37,9 +38,9 @@
 #define LIBS_PATH_FMT "/sdcard/Android/data/%s/files/libs/"
 #define MOD_TEMP_PATH_FMT "/data/data/%s/cache/"
 
-char modPath[PATH_MAX];
-char libsPath[PATH_MAX];
-char modTempPath[PATH_MAX];
+static char modPath[PATH_MAX];
+static char libsPath[PATH_MAX];
+static char modTempPath[PATH_MAX];
 
 std::vector<Mod> Mod::mods;
 bool Mod::constructed;
@@ -196,7 +197,7 @@ void Mod::load() {
 }
 
 void construct_mods(std::string_view modloaderPath) noexcept {
-    logpf(ANDROID_LOG_DEBUG, "Constructing mods from modloader path: '%s", modloaderPath.data());
+    logpf(ANDROID_LOG_DEBUG, "Constructing mods from modloader path: '%s'", modloaderPath.data());
     bool modReady = true;
     if (setDataDirs() != 0)
     {
@@ -255,7 +256,7 @@ void construct_mods(std::string_view modloaderPath) noexcept {
             std::string full_path(modPath);
             full_path.append(dp->d_name);
             auto modHandle = construct_mod(full_path.c_str());
-            Mod::mods.push_back(Mod(dp->d_name, full_path, modHandle));
+            Mod::mods.emplace_back(Mod(dp->d_name, full_path, modHandle));
         }
     }
     closedir(dir);
@@ -329,16 +330,17 @@ extern "C" JNINativeInterface modloader_main(JavaVM* v, JNIEnv* env, std::string
     auto iface = jni::interface::make_passthrough_interface<JNINativeInterface>(&env->functions);
 
     // Create libil2cpp path string. Should be in the same path as loadSrc (since libmodloader.so needs to be in the same path)
-    auto ind = loadSrc.find_last_of("/");
-    if (ind == std::string::npos) {
-        logpf(ANDROID_LOG_VERBOSE, "FAILED TO CONSTRUCT MODS! loadSrc --> libil2cpp.so PATH COULD NOT BE DETERMINED!");
+    char *dirPath = dirname(loadSrc.data());
+    if (dirPath == NULL) {
+        logpf(ANDROID_LOG_FATAL, "loadSrc cannot be converted to a valid directory!");
         return iface;
     }
-    auto currPath = std::string(loadSrc.substr(0, ind).data());
-    libIl2CppPath = currPath + "/libil2cpp.so";
     // TODO: Check if path exists before setting it and assuming it is valid
-
+    auto currPath = std::string(dirPath);
+    libIl2CppPath = currPath + "/libil2cpp.so";
+    logpf(ANDROID_LOG_DEBUG, "libil2cpp path: %s", libIl2CppPath.data());
     construct_mods(currPath);
+    return iface;
 
     return iface;
 }
@@ -348,7 +350,13 @@ extern "C" void modloader_accept_unity_handle(void* uhandle) noexcept {
 
     init_mods();
 
+    logpf(ANDROID_LOG_VERBOSE, "dlopening libil2cpp.so: %s", libIl2CppPath.data());
+
     imagehandle = dlopen(libIl2CppPath.data(), RTLD_LOCAL | RTLD_LAZY);
+    if (imagehandle == NULL) {
+        logpf(ANDROID_LOG_FATAL, "Could not dlopen libil2cpp.so! Not calling load on mods!");
+        return;
+    }
     *(void**)(&il2cppInit) = dlsym(imagehandle, "il2cpp_init");
 	logpf(ANDROID_LOG_INFO, "Loaded: il2cpp_init (%p)", il2cppInit);
     if (il2cppInit) {
