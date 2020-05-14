@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <vector>
 #include <string>
+#include <string_view>
 
 // Returns the libil2cpp.so path, should only be called AFTER mods have been constructed
 // Check Mod::constructed for validity
@@ -14,7 +15,7 @@ class Mod
     public:
         static std::vector<Mod> mods;
         static bool constructed;
-        Mod(std::string name_, std::string path, void *handle_) : name(name_), pathName(path), handle(handle_) {}
+        Mod(std::string_view name_, std::string_view path, void *handle_) : name(name_), pathName(path), handle(handle_) {}
         bool loaded;
         std::string name;
         std::string pathName;
