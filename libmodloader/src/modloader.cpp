@@ -167,6 +167,22 @@ void* construct_mod(const char* full_path) {
     return ret;
 }
 
+// Calls the setup(ModInfo&) function on the mod, if it exists
+// This will be immediately after mod construction
+void setup_mod(void *handle, ModInfo& info) {
+    logpf(ANDROID_LOG_VERBOSE, "Setting up mod handle: %p", handle);
+    void (*setup_func)(ModInfo&);
+    *(void**)(&setup_func) = dlsym(handle, "setup");
+    logpf(ANDROID_LOG_VERBOSE, "Calling setup function: %p", setup_func);
+    if (setup_func) {
+        setup_func(info);
+    }
+}
+
+bool Mod::get_loaded() {
+    return loaded;
+}
+
 // Calls the init() function on the mod, if it exists
 // This will be before il2cpp functionality is available
 // Called in preload
@@ -261,7 +277,9 @@ void construct_mods(std::string_view modloaderPath) noexcept {
             full_path.append(dp->d_name);
             auto *modHandle = construct_mod(full_path.c_str());
             logpf(ANDROID_LOG_VERBOSE, "Created mod with name: %s, path: %s, handle: %p", dp->d_name, full_path.c_str(), modHandle);
-            Mod::mods.emplace_back(dp->d_name, full_path, modHandle);
+            ModInfo info;
+            setup_mod(modHandle, info);
+            Mod::mods.emplace_back(dp->d_name, full_path, info, modHandle);
         }
     }
     closedir(dir);
@@ -347,7 +365,6 @@ extern "C" JNINativeInterface modloader_main(JavaVM* v, JNIEnv* env, std::string
     libIl2CppPath = currPath + "/libil2cpp.so";
     logpf(ANDROID_LOG_DEBUG, "libil2cpp path: %s", libIl2CppPath.data());
     construct_mods(currPath);
-    return iface;
 
     return iface;
 }
