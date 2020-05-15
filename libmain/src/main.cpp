@@ -3,6 +3,7 @@
 
 #include "log.hpp"
 #include "libmain.hpp"
+#include "libmain_internal.hpp"
 
 #include <cstddef>
 
@@ -22,13 +23,16 @@ extern "C" jint LIBMAIN_EXPORT JNI_OnLoad(JavaVM* vm, void*) {
     auto ret = env->RegisterNatives(klass, NativeLoader_bindings.data(), NativeLoader_bindings.size());
 
     if (ret < 0) {
-        logf(ANDROID_LOG_WARN, "RegisterNatives failed with %d", ret);
+        logfp(ANDROID_LOG_WARN, "RegisterNatives failed with %d", ret);
 
         env->FatalError("com/unity3d/player/NativeLoader"); // this is such a useless fucking error message because the original libmain does this
 
         return -1;
     }
 
+    log(ANDROID_LOG_VERBOSE, "Calling preload");
+    jni::modloader::preload();
+    
     log(ANDROID_LOG_INFO, "JNI_OnLoad done!");
 
     return JNI_VERSION_1_6;

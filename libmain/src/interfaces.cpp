@@ -3,6 +3,7 @@
 
 using namespace jni::interface;
 
+// TODO: eliminate namespace name
 namespace detail {
     template<typename> struct func_ptr_helper;
     template<typename R, typename ...Args>
@@ -33,7 +34,7 @@ namespace detail {
             } else {
                 return [](T* o, Args... args) {
                     if constexpr (debug_print) {
-                        logf(ANDROID_LOG_DEBUG, "Invoking wrapped JNI function %s for %p", NameProvider{}.name, o);
+                        logfp(ANDROID_LOG_DEBUG, "Invoking wrapped JNI function %s for %p", NameProvider{}.name, o);
                     }
                     auto op = *reinterpret_cast<O**>(o);
                     return ((*interface_original(op))->*member)(

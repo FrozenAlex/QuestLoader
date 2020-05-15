@@ -27,7 +27,7 @@ namespace {
     }
 
     void wrapper_log(void* target, char const* name) noexcept {
-        logf(ANDROID_LOG_DEBUG, "Wrapper function for %s (%p) invoked", name ? name : "(nullptr)", target);
+        logpf(ANDROID_LOG_DEBUG, "Wrapper function for %s (%p) invoked", name ? name : "(nullptr)", target);
     }
 }
 
@@ -44,8 +44,8 @@ void* modloader::jit::make_native_wrapper(void* original, char const* target_nam
 
     int success = mem::protect(wrap, mem::protection::read_write_execute);
 
-    logf(ANDROID_LOG_DEBUG, "Generating native wrapper around %p at %p (prot returned %d)", original, wrap.data(), success);
-    logf(ANDROID_LOG_DEBUG, "Log function is %p, name %s", from_wrapper(wrap.data())->log_target, target_name ? target_name : "(nullptr)");
+    logpf(ANDROID_LOG_DEBUG, "Generating native wrapper around %p at %p (prot returned %d)", original, wrap.data(), success);
+    logpf(ANDROID_LOG_DEBUG, "Log function is %p, name %s", from_wrapper(wrap.data())->log_target, target_name ? target_name : "(nullptr)");
 
     return wrap.data();
 }

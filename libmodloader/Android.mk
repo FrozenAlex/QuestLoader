@@ -33,6 +33,7 @@ LOCAL_CPPFLAGS  := -std=c++2a -fno-rtti -Os
 
 LOCAL_SHARED_LIBRARIES := main
 LOCAL_C_INCLUDES := ./include ./src 
-LOCAL_SRC_FILES  := $(call rwildcard,src/,*.cpp) $(call rwildcard,src/,*.s)
+LOCAL_SRC_FILES  := $(call rwildcard,src/,*.cpp) $(call rwildcard,src/,*.s) ../../beatsaber-hook/shared/inline-hook/inlineHook.c ../../beatsaber-hook/shared/inline-hook/relocate.c ../../beatsaber-hook/shared/inline-hook/And64InlineHook.cpp
+
 
 include $(BUILD_SHARED_LIBRARY)

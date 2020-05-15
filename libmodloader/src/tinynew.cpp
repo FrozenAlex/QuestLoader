@@ -83,6 +83,6 @@ void operator delete[](void* ptr, std::align_val_t align) noexcept {
     Additional stuff to help reduce binary size
 */
 extern "C" void __cxa_pure_virtual() {
-    log(ANDROID_LOG_ERROR, "Pure virtual function call");
+    logp(ANDROID_LOG_ERROR, "Pure virtual function call");
     while (1);
 }
