@@ -42,43 +42,43 @@
 #define MOD_TEMP_PATH_FMT "/data/data/%s/cache/"
 
 // There should only be ONE modloader PER GAME
-// Ideally, there is only ONE modloader per libmodloader.so, but on the far removed possibility that changes, this is non-static.
+// Ideally, there is only ONE modloader per libmodloader.so
 class Modloader {
     public:
-        const std::string getLibIl2CppPath() const;
-        const std::string getApplicationId() const;
-        const bool getAllConstructed() const;
-        const ModloaderInfo info;
-        const std::unordered_map<std::string, const Mod> getMods() const;
-        static const std::vector<const std::shared_ptr<Modloader>> getModloaders();
-        // New members, specific to .cpp only
-        static std::vector<const std::shared_ptr<Modloader>> modloaders;
-        Modloader(std::string_view modloaderPath_, ModloaderInfo info_) : modloaderPath(modloaderPath_), info(info_) {
-            construct_mods();
-            libIl2CppPath = modloaderPath + "/libil2cpp.so";
-            logpfm(ANDROID_LOG_DEBUG, "libil2cpp path: %s", libIl2CppPath.data());
-        }
-        void init_mods() noexcept;
-        void load_mods() noexcept;
+        static const std::string getLibIl2CppPath();
+        static const std::string getApplicationId();
+        static const bool getAllConstructed();
+        static const ModloaderInfo getInfo();
+        static const std::unordered_map<std::string, const Mod> getMods();
+        // New members, specific to .cpp only        
+        static void init_mods() noexcept;
+        static void load_mods() noexcept;
+        static bool allConstructed;
+        static std::string modloaderPath;
+        static std::string modPath;
+        static std::string libsPath;
+        static std::string modTempPath;
+        static std::string applicationId;
+        static std::string libIl2CppPath;
+        static void construct_mods() noexcept;
+        static void setInfo(ModloaderInfo& info);
     private:
-        bool allConstructed;
-        std::string modloaderPath;
-        std::string modPath;
-        std::string libsPath;
-        std::string modTempPath;
-        std::string applicationId;
-        std::string libIl2CppPath;
-        std::unordered_map<std::string, Mod> mods;
-        const bool setDataDirs();
-        void* construct_mod(const char* full_path);
-        void setup_mod(void *handle, ModInfo& info);
-        void construct_mods() noexcept;
+        static const bool setDataDirs();
+        static ModloaderInfo info;
+        static std::unordered_map<std::string, Mod> mods;
+        static void* construct_mod(const char* full_path);
+        static void setup_mod(void *handle, ModInfo& info);
 };
 
-// Holds a FIFO of modloaders that need to be loaded.
-// Each time an il2cpp hook runs, it pops from the loadQueue and loads all mods in that modloader
-static std::queue<Modloader> loadQueue;
-std::vector<const std::shared_ptr<Modloader>> Modloader::modloaders;;
+bool Modloader::allConstructed;
+std::string Modloader::modloaderPath;
+std::string Modloader::modPath;
+std::string Modloader::libsPath;
+std::string Modloader::modTempPath;
+std::string Modloader::applicationId;
+std::string Modloader::libIl2CppPath;
+ModloaderInfo Modloader::info;
+std::unordered_map<std::string, Mod> Modloader::mods;
 
 // Generic utility functions
 #pragma region Generic Utilities
@@ -219,11 +219,14 @@ void Modloader::setup_mod(void *handle, ModInfo& modInfo) {
     *(void**)(&setup_func) = dlsym(handle, "setup");
     logpfm(ANDROID_LOG_VERBOSE, "Calling setup function: %p", setup_func);
     if (setup_func) {
-        setup_func(this, modInfo);
+        // We don't need to pass in a Modloader pointer because we have one in static anyways!
+        setup_func(nullptr, modInfo);
     }
 }
 
 void Modloader::construct_mods() noexcept {
+    libIl2CppPath = modloaderPath + "/libil2cpp.so";
+    logpfm(ANDROID_LOG_DEBUG, "libil2cpp path: %s", libIl2CppPath.data());
     logpfm(ANDROID_LOG_DEBUG, "Constructing mods from modloader path: '%s'", modloaderPath.data());
     bool modReady = true;
     if (!setDataDirs())
@@ -312,8 +315,7 @@ MAKE_HOOK(il2cppInitHook, NULL, void, const char* domain_name)
 {
     il2cppInitHook(domain_name);
     dlclose(imagehandle);
-    loadQueue.front().load_mods();
-    loadQueue.pop();
+    Modloader::load_mods();
 }
 
 // Calls the init functions on all constructed mods
@@ -343,7 +345,6 @@ void Modloader::init_mods() noexcept {
     } else {
         logpfm(ANDROID_LOG_ERROR, "Failed to dlsym il2cpp_init!");
     }
-    loadQueue.push(*this);
 }
 
 // Calls the load functions on all constructed mods
@@ -362,21 +363,21 @@ void Modloader::load_mods() noexcept {
 }
 
 // Returns the libil2cpp.so path
-const std::string Modloader::getLibIl2CppPath() const {
+const std::string Modloader::getLibIl2CppPath() {
     return libIl2CppPath;
 }
 
 // Returns the application ID
-const std::string Modloader::getApplicationId() const {
+const std::string Modloader::getApplicationId() {
     return applicationId;
 }
 
 // Returns whether all mods have been constructed or not
-const bool Modloader::getAllConstructed() const {
+const bool Modloader::getAllConstructed() {
     return allConstructed;
 }
 
-const std::unordered_map<std::string, const Mod> Modloader::getMods() const {
+const std::unordered_map<std::string, const Mod> Modloader::getMods() {
     std::unordered_map<std::string, const Mod> temp;
     for (auto& m : mods) {
         temp.try_emplace(m.first, m.second);
@@ -384,8 +385,12 @@ const std::unordered_map<std::string, const Mod> Modloader::getMods() const {
     return temp;
 }
 
-const std::vector<const std::shared_ptr<Modloader>> Modloader::getModloaders() {
-    return modloaders;
+const ModloaderInfo Modloader::getInfo() {
+    return info;
+}
+
+void Modloader::setInfo(ModloaderInfo& info) {
+    Modloader::info = info;
 }
 #pragma endregion
 
@@ -430,9 +435,7 @@ void Mod::load_mod() {
 #pragma endregion
 
 static void init_all_mods() {
-    for (auto loader : Modloader::modloaders) {
-        loader->init_mods();
-    }
+    Modloader::init_mods();
 }
 
 extern "C" void modloader_preload() noexcept {
@@ -458,8 +461,9 @@ extern "C" JNINativeInterface modloader_main(JavaVM* v, JNIEnv* env, std::string
     ModloaderInfo info;
     info.name = "MainModloader";
     info.tag = "main-modloader";
-    std::shared_ptr<Modloader> temp(new Modloader(dirPath, info));
-    Modloader::modloaders.push_back(temp);
+    Modloader::setInfo(info);
+    Modloader::modloaderPath = dirPath;
+    Modloader::construct_mods();
 
     return iface;
 }

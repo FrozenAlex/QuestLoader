@@ -25,19 +25,17 @@ class Modloader {
     public:
         // Returns the libil2cpp.so path, should only be called AFTER mods have been constructed
         // Check Mod::constructed for validity
-        const std::string getLibIl2CppPath() const;
+        static const std::string getLibIl2CppPath();
         // Returns the application id, should only be called AFTER mods have been constructed
         // Check Mod::constructed for validity
         // Example return: com.beatgames.beatsaber
-        const std::string getApplicationId() const;
+        static const std::string getApplicationId();
         // Returns whether all mods on this modloader have been loaded or not
-        const bool getAllConstructed() const;
+        static const bool getAllConstructed();
         // Modloader info
-        const ModloaderInfo info;
+        static const ModloaderInfo getInfo();
         // A map of id to mods managed by this modloader
-        const std::unordered_map<std::string, const Mod> getMods() const;
-        // A vector of all modloaders
-        static const std::vector<const std::shared_ptr<Modloader>> getModloaders();
+        static const std::unordered_map<std::string, const Mod> getMods();
 };
 #endif
 
