@@ -1,3 +1,5 @@
+// Only define the Modloader class here, instead of getting it from the header
+#define MODLOADER_DEFINED
 #include <libmain.hpp>
 #include <modloader.hpp>
 #include <android/log.h>
@@ -28,8 +30,9 @@
 #include <dlfcn.h>
 #include "../../beatsaber-hook/shared/utils/utils.h"
 #include <libgen.h>
-
-// using namespace modloader;
+#include <memory>
+#include <queue>
+#include <unordered_map>
 
 #undef TAG
 #define TAG "libmodloader"
@@ -38,13 +41,47 @@
 #define LIBS_PATH_FMT "/sdcard/Android/data/%s/files/libs/"
 #define MOD_TEMP_PATH_FMT "/data/data/%s/cache/"
 
-static char modPath[PATH_MAX];
-static char libsPath[PATH_MAX];
-static char modTempPath[PATH_MAX];
+// There should only be ONE modloader PER GAME
+// Ideally, there is only ONE modloader per libmodloader.so, but on the far removed possibility that changes, this is non-static.
+class Modloader {
+    public:
+        const std::string getLibIl2CppPath() const;
+        const std::string getApplicationId() const;
+        const bool getAllConstructed() const;
+        const ModloaderInfo info;
+        const std::unordered_map<std::string, const Mod> getMods() const;
+        static const std::vector<const std::shared_ptr<Modloader>> getModloaders();
+        // New members, specific to .cpp only
+        static std::vector<const std::shared_ptr<Modloader>> modloaders;
+        Modloader(std::string_view modloaderPath_, ModloaderInfo info_) : modloaderPath(modloaderPath_), info(info_) {
+            construct_mods();
+            libIl2CppPath = modloaderPath + "/libil2cpp.so";
+            logpfm(ANDROID_LOG_DEBUG, "libil2cpp path: %s", libIl2CppPath.data());
+        }
+        void init_mods() noexcept;
+        void load_mods() noexcept;
+    private:
+        bool allConstructed;
+        std::string modloaderPath;
+        std::string modPath;
+        std::string libsPath;
+        std::string modTempPath;
+        std::string applicationId;
+        std::string libIl2CppPath;
+        std::unordered_map<std::string, Mod> mods;
+        const bool setDataDirs();
+        void* construct_mod(const char* full_path);
+        void setup_mod(void *handle, ModInfo& info);
+        void construct_mods() noexcept;
+};
 
-std::vector<Mod> Mod::mods;
-bool Mod::constructed;
+// Holds a FIFO of modloaders that need to be loaded.
+// Each time an il2cpp hook runs, it pops from the loadQueue and loads all mods in that modloader
+static std::queue<Modloader> loadQueue;
+std::vector<const std::shared_ptr<Modloader>> Modloader::modloaders;;
 
+// Generic utility functions
+#pragma region Generic Utilities
 static JavaVM* vm = nullptr;
 
 static jobject getActivityFromUnityPlayerInternal(JNIEnv *env) {
@@ -110,25 +147,6 @@ char *trimWhitespace(char *str)
   return str;
 }
 
-// MUST BE CALLED BEFORE LOADING MODS
-const int setDataDirs()
-{
-    FILE *cmdline = fopen("/proc/self/cmdline", "r");
-    if (cmdline) {
-        //not sure what the actual max is, but path_max should cover it
-        char application_id[PATH_MAX] = {0};
-        fread(application_id, sizeof(application_id), 1, cmdline);
-        fclose(cmdline);
-        trimWhitespace(application_id);
-        std::sprintf(modPath, MOD_PATH_FMT, application_id);
-        std::sprintf(libsPath, LIBS_PATH_FMT, application_id);
-        std::sprintf(modTempPath, MOD_TEMP_PATH_FMT, application_id);
-        return 0;
-    } else {
-        return -1;
-    }    
-}
-
 int mkpath(char* file_path, mode_t mode) {
     for (char* p = strchr(file_path + 1, '/'); p; p = strchr(p + 1, '/')) {
         *p = '\0';
@@ -142,13 +160,39 @@ int mkpath(char* file_path, mode_t mode) {
     }
     return 0;
 }
+#pragma endregion
+
+// Modloader functions
+#pragma region Modloader Functions
+// MUST BE CALLED BEFORE LOADING MODS
+const bool Modloader::setDataDirs()
+{
+    FILE *cmdline = fopen("/proc/self/cmdline", "r");
+    if (cmdline) {
+        //not sure what the actual max is, but path_max should cover it
+        char application_id[PATH_MAX] = {0};
+        fread(application_id, sizeof(application_id), 1, cmdline);
+        fclose(cmdline);
+        trimWhitespace(application_id);
+        applicationId = std::string(application_id);
+        modPath = string_format(MOD_PATH_FMT, application_id);
+        libsPath = string_format(LIBS_PATH_FMT, application_id);
+        modTempPath = string_format(MOD_TEMP_PATH_FMT, application_id);
+        // std::sprintf(modPath, MOD_PATH_FMT, application_id);
+        // std::sprintf(libsPath, LIBS_PATH_FMT, application_id);
+        // std::sprintf(modTempPath, MOD_TEMP_PATH_FMT, application_id);
+        return 0;
+    } else {
+        return -1;
+    }    
+}
 
 // TODO Find a way to avoid calling constructor on mods that have offsetless hooks in constructor
 // Loads the mod at the given full_path
 // Returns the dlopened handle
-void* construct_mod(const char* full_path) {
+void* Modloader::construct_mod(const char* full_path) {
     // Calls the constructor on the mod by loading it
-    logpf(ANDROID_LOG_INFO, "Constructing mod: %s", full_path);
+    logpfm(ANDROID_LOG_INFO, "Constructing mod: %s", full_path);
     int infile = open(full_path, O_RDONLY);
     off_t filesize = lseek(infile, 0, SEEK_END);
     lseek(infile, 0, SEEK_SET);
@@ -167,19 +211,187 @@ void* construct_mod(const char* full_path) {
     return ret;
 }
 
-// Calls the setup(ModInfo&) function on the mod, if it exists
+// Calls the setup(const Modloader*, ModInfo&) function on the mod, if it exists
 // This will be immediately after mod construction
-void setup_mod(void *handle, ModInfo& info) {
-    logpf(ANDROID_LOG_VERBOSE, "Setting up mod handle: %p", handle);
-    void (*setup_func)(ModInfo&);
+void Modloader::setup_mod(void *handle, ModInfo& modInfo) {
+    logpfm(ANDROID_LOG_VERBOSE, "Setting up mod handle: %p", handle);
+    void (*setup_func)(const Modloader*, ModInfo&);
     *(void**)(&setup_func) = dlsym(handle, "setup");
-    logpf(ANDROID_LOG_VERBOSE, "Calling setup function: %p", setup_func);
+    logpfm(ANDROID_LOG_VERBOSE, "Calling setup function: %p", setup_func);
     if (setup_func) {
-        setup_func(info);
+        setup_func(this, modInfo);
     }
 }
 
-bool Mod::get_loaded() {
+void Modloader::construct_mods() noexcept {
+    logpfm(ANDROID_LOG_DEBUG, "Constructing mods from modloader path: '%s'", modloaderPath.data());
+    bool modReady = true;
+    if (!setDataDirs())
+    {
+        logpfm(ANDROID_LOG_ERROR, "Unable to determine data directories.");
+        modReady = false;
+    }
+    else if (mkpath(modPath.data(), 0) != 0)
+    {
+        logpfm(ANDROID_LOG_ERROR, "Unable to access or create mod path at '%s'", modPath.c_str());
+        modReady = false;
+    }
+    else if (mkpath(libsPath.data(), 0) != 0) 
+    {
+        logpfm(ANDROID_LOG_ERROR, "Unable to access or create library path at: '%s'", libsPath.c_str());
+        modReady = false;
+    }
+    else if (mkpath(modTempPath.data(), 0) != 0)
+    {
+        logpfm(ANDROID_LOG_ERROR, "Unable to access or create mod temporary path at '%s'", modTempPath.c_str());
+        modReady = false;
+    }
+    if (!modReady) {
+        logpfm(ANDROID_LOG_ERROR, "QuestHook failed to initialize, mods will not load.");
+        return;
+    }
+
+    logpfm(ANDROID_LOG_INFO, "Constructing all mods!");
+
+    struct dirent *dp;
+    DIR *dir = opendir(modPath.c_str());
+    if (dir == NULL) {
+        logpfm(ANDROID_LOG_ERROR, "construct_mods(%s): %s: null dir! errno: %i, msg: %s", modloaderPath.data(), modPath.c_str(), errno, strerror(errno));
+        return;
+    }
+
+    // Set environment variable for shared library linking
+    // Needs to include:
+    // modloader
+    // libs folder
+    // files folder
+    std::string newPath = modloaderPath + ":" + libsPath + ":" + modPath;
+    char *existingLDPath = getenv("LD_LIBRARY_PATH");
+    if (existingLDPath != NULL) {
+        logpfm(ANDROID_LOG_DEBUG, "New LD_LIBRARY_PATH: %s", newPath.c_str());
+        newPath = std::string(existingLDPath) + ":" + newPath;
+    } else {
+        logpfm(ANDROID_LOG_DEBUG, "Existing LD_LIBRARY_PATH does not exist!");
+    }
+    logpfm(ANDROID_LOG_DEBUG, "New LD_LIBRARY_PATH: %s", newPath.c_str());
+    setenv("LD_LIBRARY_PATH", newPath.c_str(), 1);
+
+    while ((dp = readdir(dir)) != NULL)
+    {
+        if (strlen(dp->d_name) > 3 && !strcmp(dp->d_name + strlen(dp->d_name) - 3, ".so"))
+        {
+            std::string full_path(modPath);
+            full_path.append(dp->d_name);
+            auto *modHandle = construct_mod(full_path.c_str());
+            ModInfo modInfo;
+            setup_mod(modHandle, modInfo);
+            logpfm(ANDROID_LOG_VERBOSE, "Creating mod with name: %s, id: %s, version: %s, path: %s, handle: %p", dp->d_name, modInfo.id.c_str(), modInfo.version.c_str(), full_path.c_str(), modHandle);
+            // Don't overwrite existing mod IDs, warn when doing so
+            if (!mods.try_emplace(modInfo.id, dp->d_name, full_path, modInfo, modHandle).second) {
+                logpfm(ANDROID_LOG_WARN, "Could not construct mod with name: %s, id: %s, version: %s because another mod of that same id exists!", dp->d_name, modInfo.id.c_str(), modInfo.version.c_str());
+            }
+        }
+    }
+    closedir(dir);
+    if (existingLDPath == NULL) {
+        logpfm(ANDROID_LOG_VERBOSE, "Unsetting LD_LIBRARY_PATH!");
+        unsetenv("LD_LIBRARY_PATH");
+    } else {
+        logpfm(ANDROID_LOG_VERBOSE, "Resetting LD_LIBRARY_PATH to: %s", existingLDPath);
+        setenv("LD_LIBRARY_PATH", existingLDPath, 1);
+    }
+    Modloader::allConstructed = true;
+    logpfm(ANDROID_LOG_INFO, "Done constructing mods!");
+}
+
+static void* imagehandle;
+static void (*il2cppInit)(const char* domain_name);
+// Loads the mods after il2cpp has been initialized
+// Does not have to be offsetless since it is installed directly
+MAKE_HOOK(il2cppInitHook, NULL, void, const char* domain_name)
+{
+    il2cppInitHook(domain_name);
+    dlclose(imagehandle);
+    loadQueue.front().load_mods();
+    loadQueue.pop();
+}
+
+// Calls the init functions on all constructed mods
+void Modloader::init_mods() noexcept {
+    if (!allConstructed) {
+        logpfm(ANDROID_LOG_ERROR, "Tried to initalize mods, but they are not yet constructed!");
+        return;
+    }
+    logpfm(ANDROID_LOG_INFO, "Initializing all mods!");
+
+    for (auto& mod : mods) {
+        mod.second.init_mod();
+    }
+
+    logpfm(ANDROID_LOG_INFO, "Initialized all mods!");
+    logpfm(ANDROID_LOG_VERBOSE, "dlopening libil2cpp.so: %s", libIl2CppPath.c_str());
+
+    imagehandle = dlopen(libIl2CppPath.c_str(), RTLD_LOCAL | RTLD_LAZY);
+    if (imagehandle == NULL) {
+        logpfm(ANDROID_LOG_FATAL, "Could not dlopen libil2cpp.so! Not calling load on mods!");
+        return;
+    }
+    *(void**)(&il2cppInit) = dlsym(imagehandle, "il2cpp_init");
+	logpfm(ANDROID_LOG_INFO, "Loaded: il2cpp_init (%p)", il2cppInit);
+    if (il2cppInit) {
+        INSTALL_HOOK_DIRECT(il2cppInitHook, il2cppInit);
+    } else {
+        logpfm(ANDROID_LOG_ERROR, "Failed to dlsym il2cpp_init!");
+    }
+    loadQueue.push(*this);
+}
+
+// Calls the load functions on all constructed mods
+void Modloader::load_mods() noexcept {
+    if (!Modloader::allConstructed) {
+        logpfm(ANDROID_LOG_ERROR, "Tried to load mods, but they are not yet constructed!");
+        return;
+    }
+    logpfm(ANDROID_LOG_INFO, "Loading all mods!");
+
+    for (auto& mod : mods) {
+        mod.second.load_mod();
+    }
+
+    logpfm(ANDROID_LOG_INFO, "Loaded all mods!");
+}
+
+// Returns the libil2cpp.so path
+const std::string Modloader::getLibIl2CppPath() const {
+    return libIl2CppPath;
+}
+
+// Returns the application ID
+const std::string Modloader::getApplicationId() const {
+    return applicationId;
+}
+
+// Returns whether all mods have been constructed or not
+const bool Modloader::getAllConstructed() const {
+    return allConstructed;
+}
+
+const std::unordered_map<std::string, const Mod> Modloader::getMods() const {
+    std::unordered_map<std::string, const Mod> temp;
+    for (auto& m : mods) {
+        temp.try_emplace(m.first, m.second);
+    }
+    return temp;
+}
+
+const std::vector<const std::shared_ptr<Modloader>> Modloader::getModloaders() {
+    return modloaders;
+}
+#pragma endregion
+
+// Mod functionality
+#pragma region Mod Functions
+const bool Mod::get_loaded() const {
     return loaded;
 }
 
@@ -187,7 +399,7 @@ bool Mod::get_loaded() {
 // This will be before il2cpp functionality is available
 // Called in preload
 void Mod::init_mod() {
-    logpf(ANDROID_LOG_INFO, "Initializing mod: %s, handle: %p", pathName.c_str(), handle);
+    logpf(ANDROID_LOG_INFO, "Initializing mod: %s, id: %s, version: %s, handle: %p", pathName.c_str(), info.id.c_str(), info.version.c_str(), handle);
     if (!init_loaded) {
         *(void**)(&init_func) = dlsym(handle, "init");
         init_loaded = true;
@@ -205,7 +417,7 @@ void Mod::init_mod() {
 // This will be after il2cpp functionality is available
 // Called immediately after il2cpp_init
 void Mod::load_mod() {
-    logpf(ANDROID_LOG_INFO, "Loading mod: %s", pathName.c_str());
+    logpf(ANDROID_LOG_INFO, "Loading mod: %s, id: %s, version: %s", pathName.c_str(), info.id.c_str(), info.version.c_str());
     if (!load_loaded) {
         *(void**)(&load_func) = dlsym(handle, "load");
         load_loaded = true;
@@ -215,130 +427,12 @@ void Mod::load_mod() {
     }
     loaded = true;
 }
+#pragma endregion
 
-void construct_mods(std::string_view modloaderPath) noexcept {
-    logpf(ANDROID_LOG_DEBUG, "Constructing mods from modloader path: '%s'", modloaderPath.data());
-    bool modReady = true;
-    if (setDataDirs() != 0)
-    {
-        logpf(ANDROID_LOG_ERROR, "Unable to determine data directories.");
-        modReady = false;
+static void init_all_mods() {
+    for (auto loader : Modloader::modloaders) {
+        loader->init_mods();
     }
-    else if (mkpath(modPath, 0) != 0)
-    {
-        logpf(ANDROID_LOG_ERROR, "Unable to access or create mod path at '%s'", modPath);
-        modReady = false;
-    }
-    else if (mkpath(libsPath, 0) != 0) 
-    {
-        logpf(ANDROID_LOG_ERROR, "Unable to access or create library path at: '%s'", libsPath);
-        modReady = false;
-    }
-    else if (mkpath(modTempPath, 0) != 0)
-    {
-        logpf(ANDROID_LOG_ERROR, "Unable to access or create mod temporary path at '%s'", modTempPath);
-        modReady = false;
-    }
-    if (!modReady) {
-        logpf(ANDROID_LOG_ERROR, "QuestHook failed to initialize, mods will not load.");
-        return;
-    }
-
-    logpf(ANDROID_LOG_INFO, "Constructing all mods!");
-
-    struct dirent *dp;
-    DIR *dir = opendir(modPath);
-    if (dir == NULL) {
-        logpf(ANDROID_LOG_ERROR, "construct_mods(%s): %s: null dir! errno: %i, msg: %s", modloaderPath.data(), modPath, errno, strerror(errno));
-        return;
-    }
-
-    // Set environment variable for shared library linking
-    // Needs to include:
-    // modloader
-    // libs folder
-    // files folder
-    std::string newPath = std::string(modloaderPath.data()) + ":" + libsPath + ":" + modPath;
-    char *existingLDPath = getenv("LD_LIBRARY_PATH");
-    if (existingLDPath != NULL) {
-        logpf(ANDROID_LOG_DEBUG, "New LD_LIBRARY_PATH: %s", newPath.c_str());
-        newPath = std::string(existingLDPath) + ":" + newPath;
-    } else {
-        logpf(ANDROID_LOG_DEBUG, "Existing LD_LIBRARY_PATH does not exist!");
-    }
-    logpf(ANDROID_LOG_DEBUG, "New LD_LIBRARY_PATH: %s", newPath.c_str());
-    setenv("LD_LIBRARY_PATH", newPath.c_str(), 1);
-
-    while ((dp = readdir(dir)) != NULL)
-    {
-        if (strlen(dp->d_name) > 3 && !strcmp(dp->d_name + strlen(dp->d_name) - 3, ".so"))
-        {
-            std::string full_path(modPath);
-            full_path.append(dp->d_name);
-            auto *modHandle = construct_mod(full_path.c_str());
-            logpf(ANDROID_LOG_VERBOSE, "Created mod with name: %s, path: %s, handle: %p", dp->d_name, full_path.c_str(), modHandle);
-            ModInfo info;
-            setup_mod(modHandle, info);
-            Mod::mods.emplace_back(dp->d_name, full_path, info, modHandle);
-        }
-    }
-    closedir(dir);
-    if (existingLDPath == NULL) {
-        logpf(ANDROID_LOG_VERBOSE, "Unsetting LD_LIBRARY_PATH!");
-        unsetenv("LD_LIBRARY_PATH");
-    } else {
-        logpf(ANDROID_LOG_VERBOSE, "Resetting LD_LIBRARY_PATH to: %s", existingLDPath);
-        setenv("LD_LIBRARY_PATH", existingLDPath, 1);
-    }
-    Mod::constructed = true;
-    logpf(ANDROID_LOG_INFO, "Done constructing mods!");
-}
-
-// Calls the init functions on all constructed mods
-void init_mods() noexcept {
-    if (!Mod::constructed) {
-        logpf(ANDROID_LOG_ERROR, "Tried to initalize mods, but they are not yet constructed!");
-        return;
-    }
-    logpf(ANDROID_LOG_INFO, "Initializing all mods!");
-
-    for (auto& mod : Mod::mods) {
-        mod.init_mod();
-    }
-
-    logpf(ANDROID_LOG_INFO, "Initialized all mods!");
-}
-
-// Calls the load functions on all constructed mods
-void load_mods() noexcept {
-    if (!Mod::constructed) {
-        logpf(ANDROID_LOG_ERROR, "Tried to load mods, but they are not yet constructed!");
-        return;
-    }
-    logpf(ANDROID_LOG_INFO, "Loading all mods!");
-
-    for (auto& mod : Mod::mods) {
-        mod.load_mod();
-    }
-
-    logpf(ANDROID_LOG_INFO, "Loaded all mods!");
-}
-
-static std::string libIl2CppPath;
-// Returns the libil2cpp.so path
-std::string getLibIl2CppPath() {
-    return libIl2CppPath;
-}
-
-static void* imagehandle;
-static void (*il2cppInit)(const char* domain_name);
-// Loads the mods after il2cpp has been initialized
-// Does not have to be offsetless since it is installed directly
-MAKE_HOOK(il2cppInitHook, NULL, void, const char* domain_name)
-{
-    il2cppInitHook(domain_name);
-    dlclose(imagehandle);
-    load_mods();
 }
 
 extern "C" void modloader_preload() noexcept {
@@ -361,10 +455,11 @@ extern "C" JNINativeInterface modloader_main(JavaVM* v, JNIEnv* env, std::string
         return iface;
     }
     // TODO: Check if path exists before setting it and assuming it is valid
-    auto currPath = std::string(dirPath);
-    libIl2CppPath = currPath + "/libil2cpp.so";
-    logpf(ANDROID_LOG_DEBUG, "libil2cpp path: %s", libIl2CppPath.data());
-    construct_mods(currPath);
+    ModloaderInfo info;
+    info.name = "MainModloader";
+    info.tag = "main-modloader";
+    std::shared_ptr<Modloader> temp(new Modloader(dirPath, info));
+    Modloader::modloaders.push_back(temp);
 
     return iface;
 }
@@ -372,22 +467,7 @@ extern "C" JNINativeInterface modloader_main(JavaVM* v, JNIEnv* env, std::string
 extern "C" void modloader_accept_unity_handle(void* uhandle) noexcept {
     logpf(ANDROID_LOG_VERBOSE, "modloader_accept_unity_handle called with uhandle: 0x%p", uhandle);
 
-    init_mods();
-
-    logpf(ANDROID_LOG_VERBOSE, "dlopening libil2cpp.so: %s", libIl2CppPath.data());
-
-    imagehandle = dlopen(libIl2CppPath.data(), RTLD_LOCAL | RTLD_LAZY);
-    if (imagehandle == NULL) {
-        logpf(ANDROID_LOG_FATAL, "Could not dlopen libil2cpp.so! Not calling load on mods!");
-        return;
-    }
-    *(void**)(&il2cppInit) = dlsym(imagehandle, "il2cpp_init");
-	logpf(ANDROID_LOG_INFO, "Loaded: il2cpp_init (%p)", il2cppInit);
-    if (il2cppInit) {
-        INSTALL_HOOK_DIRECT(il2cppInitHook, il2cppInit);
-    } else {
-        logpf(ANDROID_LOG_ERROR, "Failed to dlsym il2cpp_init!");
-    }
+    init_all_mods();
 }
 
 CHECK_MODLOADER_PRELOAD;
