@@ -178,12 +178,9 @@ const bool Modloader::setDataDirs()
         modPath = string_format(MOD_PATH_FMT, application_id);
         libsPath = string_format(LIBS_PATH_FMT, application_id);
         modTempPath = string_format(MOD_TEMP_PATH_FMT, application_id);
-        // std::sprintf(modPath, MOD_PATH_FMT, application_id);
-        // std::sprintf(libsPath, LIBS_PATH_FMT, application_id);
-        // std::sprintf(modTempPath, MOD_TEMP_PATH_FMT, application_id);
-        return 0;
+        return true;
     } else {
-        return -1;
+        return false;
     }    
 }
 
