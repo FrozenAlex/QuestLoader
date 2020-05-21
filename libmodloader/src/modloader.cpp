@@ -67,7 +67,7 @@ class Modloader {
         static ModloaderInfo info;
         static std::unordered_map<std::string, Mod> mods;
         static void* construct_mod(const char* full_path);
-        static void setup_mod(void *handle, ModInfo& info);
+        static void setup_mod(void *handle, ModInfo& modInfo);
 };
 
 bool Modloader::allConstructed;
@@ -208,16 +208,16 @@ void* Modloader::construct_mod(const char* full_path) {
     return ret;
 }
 
-// Calls the setup(const Modloader*, ModInfo&) function on the mod, if it exists
+// Calls the setup(ModInfo&) function on the mod, if it exists
 // This will be immediately after mod construction
 void Modloader::setup_mod(void *handle, ModInfo& modInfo) {
     logpfm(ANDROID_LOG_VERBOSE, "Setting up mod handle: %p", handle);
-    void (*setup_func)(const Modloader*, ModInfo&);
+    void (*setup_func)(ModInfo&);
     *(void**)(&setup_func) = dlsym(handle, "setup");
-    logpfm(ANDROID_LOG_VERBOSE, "Calling setup function: %p", setup_func);
+    logpfm(ANDROID_LOG_VERBOSE, "Found setup function: %p", setup_func);
     if (setup_func) {
         // We don't need to pass in a Modloader pointer because we have one in static anyways!
-        setup_func(nullptr, modInfo);
+        setup_func(modInfo);
     }
 }
 
@@ -285,6 +285,14 @@ void Modloader::construct_mods() noexcept {
             auto *modHandle = construct_mod(full_path.c_str());
             ModInfo modInfo;
             setup_mod(modHandle, modInfo);
+            if (modInfo.id.empty()) {
+                // Fallback to library name if it doesn't have an id
+                modInfo.id = dp->d_name;
+            }
+            if (modInfo.version.empty()) {
+                // Fallback to 0.0.0 if it doesn't have a version
+                modInfo.version = "0.0.0";
+            }
             logpfm(ANDROID_LOG_VERBOSE, "Creating mod with name: %s, id: %s, version: %s, path: %s, handle: %p", dp->d_name, modInfo.id.c_str(), modInfo.version.c_str(), full_path.c_str(), modHandle);
             // Don't overwrite existing mod IDs, warn when doing so
             if (!mods.try_emplace(modInfo.id, dp->d_name, full_path, modInfo, modHandle).second) {
@@ -406,7 +414,7 @@ void Mod::init_mod() {
         *(void**)(&init_func) = dlsym(handle, "init");
         init_loaded = true;
     }
-    logpf(ANDROID_LOG_VERBOSE, "Calling init function: %p", init_func);
+    logpf(ANDROID_LOG_VERBOSE, "Found init function: %p", init_func);
     if (init_loaded && init_func) {
         Dl_info info;
         dladdr((void *)init_func, &info);
