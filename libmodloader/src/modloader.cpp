@@ -66,7 +66,7 @@ class Modloader {
         static const bool setDataDirs();
         static ModloaderInfo info;
         static std::unordered_map<std::string, Mod> mods;
-        static void* construct_mod(const char* full_path);
+        static void* construct_mod(std::string path, const char* filename);
         static void setup_mod(void *handle, ModInfo& modInfo);
 };
 
@@ -147,7 +147,9 @@ char *trimWhitespace(char *str)
   return str;
 }
 
-int mkpath(char* file_path, mode_t mode) {
+int mkpath(std::string stringPath, mode_t mode) {
+    // Pass a copy of the string to mkpath
+    char* file_path = stringPath.data();
     for (char* p = strchr(file_path + 1, '/'); p; p = strchr(p + 1, '/')) {
         *p = '\0';
         if (mkdir(file_path, mode) == -1) {
@@ -187,16 +189,18 @@ const bool Modloader::setDataDirs()
 // TODO Find a way to avoid calling constructor on mods that have offsetless hooks in constructor
 // Loads the mod at the given full_path
 // Returns the dlopened handle
-void* Modloader::construct_mod(const char* full_path) {
+void* Modloader::construct_mod(std::string path, const char* filename) {
     // Calls the constructor on the mod by loading it
+    auto full_path = (path + filename).c_str();
     logpfm(ANDROID_LOG_INFO, "Constructing mod: %s", full_path);
     int infile = open(full_path, O_RDONLY);
     off_t filesize = lseek(infile, 0, SEEK_END);
     lseek(infile, 0, SEEK_SET);
 
-    const char* filename = basename(full_path);
+    logpfm(ANDROID_LOG_VERBOSE, "Temp path: %s", modTempPath.c_str());
     std::string temp_path(modTempPath);
     temp_path.append(filename);
+    logpfm(ANDROID_LOG_VERBOSE, "Local full path: %s", temp_path.c_str());
 
     int outfile = open(temp_path.c_str(), O_CREAT | O_WRONLY);
     sendfile(outfile, infile, 0, filesize);
@@ -204,6 +208,11 @@ void* Modloader::construct_mod(const char* full_path) {
     close(outfile);
     chmod(temp_path.c_str(), S_IRUSR | S_IWUSR | S_IXUSR | S_IRGRP | S_IWGRP | S_IXGRP);
     auto *ret = dlopen(temp_path.c_str(), RTLD_NOW | RTLD_LOCAL);
+    if (ret == NULL) {
+        // Error logging (for if symbols cannot be resolved)
+        auto s = dlerror();
+        logpfm(ANDROID_LOG_WARN, "dlerror when dlopening: %s", s == NULL ? "null" : s);
+    }
     unlink(temp_path.c_str());
     return ret;
 }
@@ -231,17 +240,17 @@ void Modloader::construct_mods() noexcept {
         logpfm(ANDROID_LOG_ERROR, "Unable to determine data directories.");
         modReady = false;
     }
-    else if (mkpath(modPath.data(), 0) != 0)
+    else if (mkpath(modPath, 0) != 0)
     {
         logpfm(ANDROID_LOG_ERROR, "Unable to access or create mod path at '%s'", modPath.c_str());
         modReady = false;
     }
-    else if (mkpath(libsPath.data(), 0) != 0) 
+    else if (mkpath(libsPath, 0) != 0) 
     {
         logpfm(ANDROID_LOG_ERROR, "Unable to access or create library path at: '%s'", libsPath.c_str());
         modReady = false;
     }
-    else if (mkpath(modTempPath.data(), 0) != 0)
+    else if (mkpath(modTempPath, 0) != 0)
     {
         logpfm(ANDROID_LOG_ERROR, "Unable to access or create mod temporary path at '%s'", modTempPath.c_str());
         modReady = false;
@@ -281,8 +290,7 @@ void Modloader::construct_mods() noexcept {
         if (strlen(dp->d_name) > 3 && !strcmp(dp->d_name + strlen(dp->d_name) - 3, ".so"))
         {
             std::string full_path(modPath);
-            full_path.append(dp->d_name);
-            auto *modHandle = construct_mod(full_path.c_str());
+            auto *modHandle = construct_mod(full_path, dp->d_name);
             ModInfo modInfo;
             setup_mod(modHandle, modInfo);
             if (modInfo.id.empty()) {
