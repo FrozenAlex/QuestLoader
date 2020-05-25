@@ -274,7 +274,7 @@ void Modloader::construct_mods() noexcept {
     // modloader
     // libs folder
     // files folder
-    std::string newPath = modloaderPath + ":" + libsPath + ":" + modPath;
+    std::string newPath = modloaderPath + ":" + libsPath.substr(0, libsPath.length() - 1) + ":" + modPath.substr(0, modPath.length() - 1);
     char *existingLDPath = getenv("LD_LIBRARY_PATH");
     if (existingLDPath != NULL) {
         logpfm(ANDROID_LOG_DEBUG, "New LD_LIBRARY_PATH: %s", newPath.c_str());
