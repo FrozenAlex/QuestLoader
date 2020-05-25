@@ -283,12 +283,14 @@ void Modloader::construct_mods() noexcept {
             if (strlen(dp->d_name) > 3 && !strcmp(dp->d_name + strlen(dp->d_name) - 3, ".so")) {
                 // We want to copy all .so files to our temp path, or we can dlopen them locally
                 copy_to_temp(libsPath, dp->d_name);
-                // const char* str = (libsPath + dp->d_name).c_str();
-                // auto* tmp = dlopen(str, RTLD_LAZY | RTLD_LOCAL);
-                // if (tmp == NULL) {
-                //     auto s = dlerror();
-                //     logpfm(ANDROID_LOG_ERROR, "Failed to dlopen: %s, dlerror: %s", str, s == NULL ? "null" : s);
-                // }
+                const char* str = (modTempPath + dp->d_name).c_str();
+                auto* tmp = dlopen(str, RTLD_LAZY | RTLD_LOCAL);
+                if (tmp == NULL) {
+                    auto s = dlerror();
+                    logpfm(ANDROID_LOG_ERROR, "Failed to dlopen: %s, dlerror: %s", str, s == NULL ? "null" : s);
+                }
+                // We shouldn't need to keep this handle anywhere, we can just throw it away without closing it.
+                // This should hopefully force the library to stay open
             }
         }
         closedir(dir);
@@ -305,6 +307,8 @@ void Modloader::construct_mods() noexcept {
         if (strlen(dp->d_name) > 3 && !strcmp(dp->d_name + strlen(dp->d_name) - 3, ".so")) {
             // Copy each of the mods to the temp directory, hopefully this solves linkage of mods by mods
             // TODO: Ensure this is the case
+            // Linking and using mods is a pretty complicated process, since we need to dlopen the mod dependencies in order.
+            // This should probably be done in some setup
             copy_to_temp(modPath, dp->d_name);
         }
     }
