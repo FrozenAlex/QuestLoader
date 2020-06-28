@@ -24,3 +24,5 @@ Set-Location $PSScriptRoot
 Set-Location $libmodloaderPath
 ."$libmodloaderPath/build.ps1"
 Set-Location $PSScriptRoot
+
+Rename-Item "$libmodloaderPath/libs/arm64-v8a/libmodloader.so" "$libmodloaderPath/libs/arm64-v8a/libmodloader64.so"

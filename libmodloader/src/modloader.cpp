@@ -33,6 +33,7 @@
 #include <memory>
 #include <queue>
 #include <unordered_map>
+#include <unordered_set>
 
 #undef TAG
 #define TAG "libmodloader"
@@ -50,6 +51,8 @@ class Modloader {
         static const bool getAllConstructed();
         static const ModloaderInfo getInfo();
         static const std::unordered_map<std::string, const Mod> getMods();
+        static void requireMod(const ModInfo&);
+        static void requireMod(std::string_view id, std::string_view version);
         // New members, specific to .cpp only        
         static void init_mods() noexcept;
         static void load_mods() noexcept;
@@ -66,6 +69,7 @@ class Modloader {
         static const bool setDataDirs();
         static ModloaderInfo info;
         static std::unordered_map<std::string, Mod> mods;
+        static std::unordered_set<Mod> loadingMods;
         static void copy_to_temp(std::string path, const char* filename);
         static void* construct_mod(std::string path, const char* filename);
         static void setup_mod(void *handle, ModInfo& modInfo);
@@ -80,6 +84,7 @@ std::string Modloader::applicationId;
 std::string Modloader::libIl2CppPath;
 ModloaderInfo Modloader::info;
 std::unordered_map<std::string, Mod> Modloader::mods;
+std::unordered_set<Mod> Modloader::loadingMods;
 
 // Generic utility functions
 #pragma region Generic Utilities
@@ -390,7 +395,11 @@ void Modloader::load_mods() noexcept {
     logpfm(ANDROID_LOG_INFO, "Loading all mods!");
 
     for (auto& mod : mods) {
-        mod.second.load_mod();
+        // Add each mod to the loadingMods list immediately before so it is not double loaded
+        if (!mod.second.get_loaded()) {
+            loadingMods.insert(mod.second);
+            mod.second.load_mod();
+        }
     }
 
     logpfm(ANDROID_LOG_INFO, "Loaded all mods!");
@@ -425,6 +434,43 @@ const ModloaderInfo Modloader::getInfo() {
 
 void Modloader::setInfo(ModloaderInfo& info) {
     Modloader::info = info;
+}
+
+void Modloader::requireMod(const ModInfo& info) {
+    Modloader::requireMod(info.id, info.version);
+}
+void Modloader::requireMod(std::string_view id, std::string_view version) {
+    // Find the matching mod in our list of constructed mods
+    // If it doesn't exist, exit immediately.
+    // If we find that a mod that is being required requires a mod that requires us, we have deadlock
+    // So, in such a case, we would like to simply return immediately if we detect that this is the case.
+    // loadingMods is a vector of all mods that are being loaded at the moment.
+    // If the mod that we are attempting to require is already in this list, we return immediately.
+    // Otherwise, we invoke the mod.load function on that mod and let it run to completion.
+    logpf(ANDROID_LOG_VERBOSE, "Requiring mod: %s", id.data());
+    auto m = mods.find(id.data());
+    if (m != mods.end()) {
+        logpf(ANDROID_LOG_VERBOSE, "Found matching mod!");
+        // Ensure version matches (a version match should be specific to the version for now)
+        // Eventually, this should check if there exists a version >= the provided one.
+        // TODO: ^
+        if (m->second.info.version != version) {
+            logpf(ANDROID_LOG_VERBOSE, "Version mismatch: desired: %s, actual: %s", version.data(), m->second.info.version.c_str());
+            return;
+        }
+        auto loading = loadingMods.find(m->second);
+        if (loading != loadingMods.end()) {
+            // If the mod is in our loadingMods, return early
+            logpf(ANDROID_LOG_VERBOSE, "Mod already in loadingMods (loading or is loaded!)");
+            return;
+        }
+        if (!m->second.get_loaded()) {
+            // If the mod isn't already loaded, load it.
+            logpf(ANDROID_LOG_VERBOSE, "Loading mod...");
+            loadingMods.insert(m->second);
+            m->second.load_mod();
+        }
+    }
 }
 #pragma endregion
 
