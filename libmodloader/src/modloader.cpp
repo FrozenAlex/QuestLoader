@@ -72,6 +72,7 @@ class Modloader {
         static std::unordered_set<Mod> loadingMods;
         static void copy_to_temp(std::string path, const char* filename);
         static void* construct_mod(std::string path, const char* filename);
+        static bool create_mod(std::string modPath, const char* name);
         static void setup_mod(void *handle, ModInfo& modInfo);
 };
 
@@ -242,6 +243,30 @@ void Modloader::setup_mod(void *handle, ModInfo& modInfo) {
     }
 }
 
+// Returns true if a mod was successfully created, false otherwise.
+bool Modloader::create_mod(std::string modPath, const char* name) {
+    auto *modHandle = construct_mod(modPath, name);
+    if (modHandle == NULL) {
+        return false;
+    }
+    ModInfo modInfo;
+    setup_mod(modHandle, modInfo);
+    if (modInfo.id.empty()) {
+        // Fallback to library name if it doesn't have an id
+        modInfo.id = name;
+    }
+    if (modInfo.version.empty()) {
+        // Fallback to 0.0.0 if it doesn't have a version
+        modInfo.version = "0.0.0";
+    }
+    logpfm(ANDROID_LOG_VERBOSE, "Creating mod with name: %s, id: %s, version: %s, path: %s, handle: %p", name, modInfo.id.c_str(), modInfo.version.c_str(), modPath.c_str(), modHandle);
+    // Don't overwrite existing mod IDs, warn when doing so
+    if (!mods.try_emplace(modInfo.id, name, modPath, modInfo, modHandle).second) {
+        logpfm(ANDROID_LOG_WARN, "Could not construct mod with name: %s, id: %s, version: %s because another mod of that same id exists!", name, modInfo.id.c_str(), modInfo.version.c_str());
+    }
+    return true;
+}
+
 void Modloader::construct_mods() noexcept {
     libIl2CppPath = modloaderPath + "/libil2cpp.so";
     logpfm(ANDROID_LOG_DEBUG, "libil2cpp path: %s", libIl2CppPath.data());
@@ -278,6 +303,9 @@ void Modloader::construct_mods() noexcept {
 
     // LD_LIBRARY_PATH does not work on Android with intended results.
     // Instead, lets add all of the specific files to the modTempPath directory.
+
+    // Failed to load libs/mods
+    std::vector<std::pair<std::string, const char*>> failed;
     
     DIR *dir = opendir(libsPath.c_str());
     if (dir == NULL) {
@@ -288,17 +316,41 @@ void Modloader::construct_mods() noexcept {
             if (strlen(dp->d_name) > 3 && !strcmp(dp->d_name + strlen(dp->d_name) - 3, ".so")) {
                 // We want to copy all .so files to our temp path, or we can dlopen them locally
                 copy_to_temp(libsPath, dp->d_name);
+            }
+        }
+        closedir(dir);
+        dir = opendir(libsPath.c_str());
+        while ((dp = readdir(dir)) != NULL) {
+            // Iterate over the directory AGAIN
+            // This time this happens after all mods are copied so we can ensure proper linkage
+            // dlopen each one
+            if (strlen(dp->d_name) > 3 && !strcmp(dp->d_name + strlen(dp->d_name) - 3, ".so")) {
                 const char* str = (modTempPath + dp->d_name).c_str();
                 auto* tmp = dlopen(str, RTLD_LAZY | RTLD_LOCAL);
                 if (tmp == NULL) {
                     auto s = dlerror();
                     logpfm(ANDROID_LOG_ERROR, "Failed to dlopen: %s, dlerror: %s", str, s == NULL ? "null" : s);
+                    failed.emplace_back(modTempPath, dp->d_name);
                 }
                 // We shouldn't need to keep this handle anywhere, we can just throw it away without closing it.
                 // This should hopefully force the library to stay open
             }
         }
         closedir(dir);
+    }
+
+    // List failed libs and try again
+    if (failed.size() > 0) {
+        logpfm(ANDROID_LOG_WARN, "Failed libraries:");
+        for (const auto& item : failed) {
+            logpfm(ANDROID_LOG_INFO, "Failed library: %s! Trying again...", (item.first + item.second).c_str());
+            auto* tmp = dlopen((item.first + item.second).c_str(), RTLD_LAZY | RTLD_LOCAL);
+            if (tmp == NULL) {
+                auto s = dlerror();
+                logpfm(ANDROID_LOG_ERROR, "Still failed to dlopen: %s, dlerror: %s", (item.first + item.second).c_str(), s == NULL ? "null" : s);
+            }
+        }
+        failed.clear();
     }
     
     // Each of the mods should be lazily loaded, or copied AOT to ensure correct linkage
@@ -323,25 +375,28 @@ void Modloader::construct_mods() noexcept {
     dir = opendir(modPath.c_str());
     while ((dp = readdir(dir)) != NULL) {
         if (strlen(dp->d_name) > 3 && !strcmp(dp->d_name + strlen(dp->d_name) - 3, ".so")) {
-            auto *modHandle = construct_mod(modPath, dp->d_name);
-            ModInfo modInfo;
-            setup_mod(modHandle, modInfo);
-            if (modInfo.id.empty()) {
-                // Fallback to library name if it doesn't have an id
-                modInfo.id = dp->d_name;
-            }
-            if (modInfo.version.empty()) {
-                // Fallback to 0.0.0 if it doesn't have a version
-                modInfo.version = "0.0.0";
-            }
-            logpfm(ANDROID_LOG_VERBOSE, "Creating mod with name: %s, id: %s, version: %s, path: %s, handle: %p", dp->d_name, modInfo.id.c_str(), modInfo.version.c_str(), modPath.c_str(), modHandle);
-            // Don't overwrite existing mod IDs, warn when doing so
-            if (!mods.try_emplace(modInfo.id, dp->d_name, modPath, modInfo, modHandle).second) {
-                logpfm(ANDROID_LOG_WARN, "Could not construct mod with name: %s, id: %s, version: %s because another mod of that same id exists!", dp->d_name, modInfo.id.c_str(), modInfo.version.c_str());
+            if (!create_mod(modPath, dp->d_name)) {
+                auto s = dlerror();
+                logpfm(ANDROID_LOG_ERROR, "Failed to dlopen: %s, dlerror: %s", (modPath + dp->d_name).c_str(), s == NULL ? "null" : s);
+                failed.emplace_back(modPath, dp->d_name);
             }
         }
     }
     closedir(dir);
+
+    // TODO: This matches the above
+    if (failed.size() > 0) {
+        logpfm(ANDROID_LOG_WARN, "Failed mods:");
+        for (const auto& item : failed) {
+            logpfm(ANDROID_LOG_INFO, "Failed mod: %s Trying again...", (item.first + item.second).c_str());
+            if (!create_mod(item.first, item.second)) {
+                auto s = dlerror();
+                logpfm(ANDROID_LOG_ERROR, "Still failed to dlopen: %s, dlerror: %s", (modPath + dp->d_name).c_str(), s == NULL ? "null" : s);
+            }
+        }
+        failed.clear();
+    }
+
     Modloader::allConstructed = true;
     logpfm(ANDROID_LOG_INFO, "Done constructing mods!");
 }
