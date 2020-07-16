@@ -348,6 +348,8 @@ void Modloader::construct_mods() noexcept {
             if (tmp == NULL) {
                 auto s = dlerror();
                 logpfm(ANDROID_LOG_ERROR, "Still failed to dlopen: %s, dlerror: %s", (item.first + item.second).c_str(), s == NULL ? "null" : s);
+            } else {
+                logpfm(ANDROID_LOG_INFO, "Success! Opened library: %s Handle: %p", (item.first + item.second).c_str(), tmp);
             }
         }
         failed.clear();
@@ -392,6 +394,8 @@ void Modloader::construct_mods() noexcept {
             if (!create_mod(item.first, item.second)) {
                 auto s = dlerror();
                 logpfm(ANDROID_LOG_ERROR, "Still failed to dlopen: %s, dlerror: %s", (modPath + dp->d_name).c_str(), s == NULL ? "null" : s);
+            } else {
+                logpfm(ANDROID_LOG_INFO, "Success! Opened mod: %s", (item.first + item.second).c_str());
             }
         }
         failed.clear();
@@ -454,6 +458,8 @@ void Modloader::load_mods() noexcept {
         if (!mod.second.get_loaded()) {
             loadingMods.insert(mod.second);
             mod.second.load_mod();
+        } else {
+            logpfm(ANDROID_LOG_VERBOSE, "Mod: %s (id: %s) already loaded! Not loading again.", mod.first.c_str(), mod.second.info.id.c_str());
         }
     }
 

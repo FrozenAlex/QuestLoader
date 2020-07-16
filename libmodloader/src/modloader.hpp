@@ -60,8 +60,8 @@ class Mod {
     private:
         void init_mod();
         void load_mod();
-        bool loaded;
-        void *handle;
+        bool loaded = false;
+        void *handle = nullptr;
         bool init_loaded = false;
         void (*init_func)(void) = NULL;
         bool load_loaded = false;
