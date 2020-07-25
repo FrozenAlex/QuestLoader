@@ -1,0 +1,16 @@
+{
+  "sharedDir": "shared",
+  "dependenciesDir": "extern",
+  "info": {
+    "name": "modloader",
+    "id": "modloader",
+    "version": "0.1.0",
+    "url": null,
+    "additionalData": {}
+  },
+  "dependencies": [],
+  "additionalData": {
+    "branchName": "pre-1.0.0",
+    "soLink": "https://github.com/sc2ad/QuestLoader/releases/download/v0.1.0/libmodloader.so"
+  }
+}
