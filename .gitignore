@@ -5,3 +5,7 @@
 
 /apkpath.txt
 /ndkpath.txt
+# QPM Dependencies
+extern/
+# QPM packages
+qpm.lock.json
