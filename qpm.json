@@ -6,11 +6,11 @@
     "id": "modloader",
     "version": "1.0.0",
     "url": "https://github.com/sc2ad/QuestLoader/",
-    "additionalData": {}
+    "additionalData": {
+      "branchName": "staticModloader",
+      "soLink": "https://github.com/sc2ad/QuestLoader/releases/download/v1.0.0/libmodloader.so"
+    }
   },
   "dependencies": [],
-  "additionalData": {
-    "branchName": "staticModloader",
-    "soLink": "https://github.com/sc2ad/QuestLoader/releases/download/v1.0.0/libmodloader.so"
-  }
+  "additionalData": {}
 }
