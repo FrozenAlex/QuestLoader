@@ -31,7 +31,7 @@ class Modloader {
         // Example return: com.beatgames.beatsaber
         static const std::string getApplicationId();
         // Returns whether all mods on this modloader have been loaded or not
-        static const bool getAllConstructed();
+        static bool getAllConstructed();
         // Modloader info
         static const ModloaderInfo getInfo();
         // A map of id to mods managed by this modloader
@@ -53,7 +53,7 @@ class Mod {
         const std::string name;
         const std::string pathName;
         const ModInfo info;
-        const bool get_loaded() const;
+        bool get_loaded() const;
         bool operator==(const Mod& m) const {
             return info.id == m.info.id && info.version == m.info.version;
         }

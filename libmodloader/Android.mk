@@ -29,7 +29,7 @@ rwildcard=$(wildcard $1$2) $(foreach d,$(wildcard $1*),$(call rwildcard,$d/,$2))
 
 LOCAL_LDLIBS    := -llog
 LOCAL_MODULE    := modloader
-LOCAL_CPPFLAGS  := -std=c++2a -fno-rtti -Os
+LOCAL_CPPFLAGS  := -std=c++2a -fno-rtti -Os -Wall -Wextra -Werror -Wno-unused-function -Wno-unused-parameter -Wno-sign-compare
 
 LOCAL_SHARED_LIBRARIES := main
 LOCAL_C_INCLUDES := ./include ./src 

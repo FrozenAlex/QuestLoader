@@ -48,7 +48,7 @@ class Modloader {
     public:
         static const std::string getLibIl2CppPath();
         static const std::string getApplicationId();
-        static const bool getAllConstructed();
+        static bool getAllConstructed();
         static const ModloaderInfo getInfo();
         static const std::unordered_map<std::string, const Mod> getMods();
         static void requireMod(const ModInfo&);
@@ -66,12 +66,12 @@ class Modloader {
         static void construct_mods() noexcept;
         static void setInfo(ModloaderInfo& info);
     private:
-        static const bool setDataDirs();
+        static bool setDataDirs();
         static ModloaderInfo info;
         static std::unordered_map<std::string, Mod> mods;
         static std::unordered_set<Mod> loadingMods;
         static void copy_to_temp(std::string path, const char* filename);
-        static void* construct_mod(std::string path, const char* filename);
+        static void* construct_mod(const char* filename);
         static bool create_mod(std::string modPath, const char* name);
         static void setup_mod(void *handle, ModInfo& modInfo);
 };
@@ -89,7 +89,6 @@ std::unordered_set<Mod> Modloader::loadingMods;
 
 // Generic utility functions
 #pragma region Generic Utilities
-static JavaVM* vm = nullptr;
 
 static jobject getActivityFromUnityPlayerInternal(JNIEnv *env) {
     jclass clazz = env->FindClass("com/unity3d/player/UnityPlayer");
@@ -174,7 +173,7 @@ int mkpath(std::string stringPath, mode_t mode) {
 // Modloader functions
 #pragma region Modloader Functions
 // MUST BE CALLED BEFORE LOADING MODS
-const bool Modloader::setDataDirs()
+bool Modloader::setDataDirs()
 {
     FILE *cmdline = fopen("/proc/self/cmdline", "r");
     if (cmdline) {
@@ -215,7 +214,7 @@ void Modloader::copy_to_temp(std::string path, const char* filename) {
 // TODO Find a way to avoid calling constructor on mods that have offsetless hooks in constructor
 // Loads the mod at the given full_path
 // Returns the dlopened handle
-void* Modloader::construct_mod(std::string path, const char* filename) {
+void* Modloader::construct_mod(const char* filename) {
     // Calls the constructor on the mod by loading it
     // Copying should have already taken place.
     std::string temp_path(modTempPath);
@@ -245,7 +244,7 @@ void Modloader::setup_mod(void *handle, ModInfo& modInfo) {
 
 // Returns true if a mod was successfully created, false otherwise.
 bool Modloader::create_mod(std::string modPath, const char* name) {
-    auto *modHandle = construct_mod(modPath, name);
+    auto *modHandle = construct_mod(name);
     if (modHandle == NULL) {
         return false;
     }
@@ -477,7 +476,7 @@ const std::string Modloader::getApplicationId() {
 }
 
 // Returns whether all mods have been constructed or not
-const bool Modloader::getAllConstructed() {
+bool Modloader::getAllConstructed() {
     return allConstructed;
 }
 
@@ -537,7 +536,7 @@ void Modloader::requireMod(std::string_view id, std::string_view version) {
 
 // Mod functionality
 #pragma region Mod Functions
-const bool Mod::get_loaded() const {
+bool Mod::get_loaded() const {
     return loaded;
 }
 
