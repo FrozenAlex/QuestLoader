@@ -4,11 +4,12 @@
   "info": {
     "name": "modloader",
     "id": "modloader",
-    "version": "0.1.0",
+    "version": "0.1.1",
     "url": "https://github.com/sc2ad/QuestLoader",
     "additionalData": {
       "branchName": "pre-1.0.0",
-      "soLink": "https://github.com/sc2ad/QuestLoader/releases/download/v0.1.0/libmodloader.so"
+      "soLink": "https://github.com/sc2ad/QuestLoader/releases/download/v0.1.0/libmodloader.so",
+      "overrideSoName": "libmodloader.so"
     }
   },
   "dependencies": [],
