@@ -448,7 +448,7 @@ void Modloader::construct_mods() noexcept {
             if (strlen(dp->d_name) > 3 && !strcmp(dp->d_name + strlen(dp->d_name) - 3, ".so")) {
                 const char* str = (modTempPath + dp->d_name).c_str();
                 // Delete all .so files in our modTempPath
-                if (!unlink(str)) {
+                if (unlink(str)) {
                     logpfm(ANDROID_LOG_WARN, "Failed to delete: %s errno: %i, msg: %s", str, errno, strerror(errno));
                 } else {
                     logpfm(ANDROID_LOG_VERBOSE, "Deleted: %s", str);
