@@ -9,3 +9,4 @@
 extern/
 # QPM packages
 qpm.lock.json
+qpm.shared.json
