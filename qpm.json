@@ -4,7 +4,7 @@
   "info": {
     "name": "modloader",
     "id": "modloader",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "url": "https://github.com/sc2ad/QuestLoader",
     "additionalData": {
       "branchName": "staticModloader",
