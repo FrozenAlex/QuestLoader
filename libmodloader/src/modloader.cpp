@@ -34,6 +34,7 @@
 #include <queue>
 #include <unordered_map>
 #include <unordered_set>
+#include "protection.hpp"
 
 #undef TAG
 #define TAG "libmodloader"
@@ -193,7 +194,7 @@ bool Modloader::setDataDirs()
         return true;
     } else {
         return false;
-    }    
+    }
 }
 
 void Modloader::copy_to_temp(std::string path, const char* filename) {
@@ -223,6 +224,7 @@ void* Modloader::construct_mod(const char* filename) {
     std::string temp_path(modTempPath);
     temp_path.append(filename);
     auto *ret = dlopen(temp_path.c_str(), RTLD_NOW | RTLD_LOCAL);
+    protect();
     if (ret == NULL) {
         // Error logging (for if symbols cannot be resolved)
         auto s = dlerror();
@@ -491,7 +493,7 @@ static void (*il2cppInit)(const char* domain_name);
 MAKE_HOOK(il2cppInitHook, NULL, void, const char* domain_name)
 {
     il2cppInitHook(domain_name);
-    dlclose(imagehandle);
+    protect();
     Modloader::load_mods();
 }
 
@@ -511,6 +513,8 @@ void Modloader::init_mods() noexcept {
     logpfm(ANDROID_LOG_VERBOSE, "dlopening libil2cpp.so: %s", libIl2CppPath.c_str());
 
     imagehandle = dlopen(libIl2CppPath.c_str(), RTLD_LOCAL | RTLD_LAZY);
+    // On startup, we also want to protect everything, and ensure we have read/write
+    protect();
     if (imagehandle == NULL) {
         logpfm(ANDROID_LOG_FATAL, "Could not dlopen libil2cpp.so! Not calling load on mods!");
         return;
