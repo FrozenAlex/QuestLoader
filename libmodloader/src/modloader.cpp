@@ -195,8 +195,6 @@ bool Modloader::setDataDirs()
     } else {
         return false;
     }
-    // Protect at least once on startup
-    protect();
 }
 
 void Modloader::copy_to_temp(std::string path, const char* filename) {
@@ -414,6 +412,8 @@ bool Modloader::try_setup_mods() {
 void Modloader::construct_mods() noexcept {
     libIl2CppPath = modloaderPath + "/libil2cpp.so";
     logpfm(ANDROID_LOG_DEBUG, "libil2cpp path: %s", libIl2CppPath.data());
+    // Protect at least once on startup
+    protect();
     logpfm(ANDROID_LOG_DEBUG, "Constructing mods from modloader path: '%s'", modloaderPath.data());
     bool modReady = true;
     if (!setDataDirs())
