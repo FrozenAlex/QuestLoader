@@ -41,7 +41,7 @@
 
 #define MOD_PATH_FMT "/sdcard/Android/data/%s/files/mods/"
 #define LIBS_PATH_FMT "/sdcard/Android/data/%s/files/libs/"
-#define MOD_TEMP_PATH_FMT "/sdcard/%s/cache/"
+#define MOD_TEMP_PATH_FMT "/data/data/%s/"
 
 // There should only be ONE modloader PER GAME
 // Ideally, there is only ONE modloader per libmodloader.so
