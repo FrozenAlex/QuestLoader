@@ -33,7 +33,7 @@ namespace {
 
 void* modloader::jit::make_native_wrapper(void* original, char const* target_name) noexcept {
     std::span wrapTempl {stubs::native_wrapper, 
-                         static_cast<std::ptrdiff_t>(stubs::native_wrapper_size)};
+                         static_cast<std::size_t>(stubs::native_wrapper_size)};
                     //   the standard says the above *should* be std::size_t not std::ptrdiff_t
     std::span wrap {new(mem::aligned, 16) uint32_t[wrapTempl.size()], wrapTempl.size()};
     std::copy(wrapTempl.begin(), wrapTempl.end(), wrap.begin());

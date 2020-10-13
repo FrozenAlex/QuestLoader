@@ -189,7 +189,7 @@ bool Modloader::setDataDirs()
         modPath = string_format(MOD_PATH_FMT, application_id);
         libsPath = string_format(LIBS_PATH_FMT, application_id);
         modTempPath = string_format(MOD_TEMP_PATH_FMT, application_id);
-        system((std::string("mkdir -p -m +rwx ") + modsTempPath.data()).c_str())
+        system((std::string("mkdir -p -m +rwx ") + modTempPath.data()).c_str());
         return true;
     } else {
         return false;
@@ -207,7 +207,7 @@ void Modloader::copy_to_temp(std::string path, const char* filename) {
     std::string temp_path = modTempPath + filename;
     logpfm(ANDROID_LOG_VERBOSE, "Local full path: %s", temp_path.c_str());
 
-    int outfile = open(temp_path.c_str(), O_CREAT | O_WRONLY);
+    int outfile = open(temp_path.c_str(), O_CREAT | O_WRONLY, 0777);
     sendfile(outfile, infile, 0, filesize);
     close(infile);
     close(outfile);
