@@ -195,6 +195,8 @@ bool Modloader::setDataDirs()
     } else {
         return false;
     }
+    // Protect at least once on startup
+    protect();
 }
 
 void Modloader::copy_to_temp(std::string path, const char* filename) {
