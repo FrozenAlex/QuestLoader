@@ -40,7 +40,7 @@
 
 #define MOD_PATH_FMT "/sdcard/Android/data/%s/files/mods/"
 #define LIBS_PATH_FMT "/sdcard/Android/data/%s/files/libs/"
-#define MOD_TEMP_PATH_FMT "/data/data/%s/"
+#define MOD_TEMP_PATH_FMT "/sdcard/%s/cache/"
 
 // There should only be ONE modloader PER GAME
 // Ideally, there is only ONE modloader per libmodloader.so
@@ -189,6 +189,7 @@ bool Modloader::setDataDirs()
         modPath = string_format(MOD_PATH_FMT, application_id);
         libsPath = string_format(LIBS_PATH_FMT, application_id);
         modTempPath = string_format(MOD_TEMP_PATH_FMT, application_id);
+        system((std::string("mkdir -p -m +rwx ") + modsTempPath.data()).c_str())
         return true;
     } else {
         return false;
