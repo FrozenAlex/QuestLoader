@@ -13,7 +13,6 @@ void protect() {
     std::ifstream procMap("/proc/self/maps");
     std::string line;
     while (std::getline(procMap, line)) {
-        logpf(ANDROID_LOG_DEBUG, "%s", line.c_str());
         auto idx = line.find_first_of('-');
         if (idx == std::string::npos) {
             logpf(ANDROID_LOG_ERROR, "Could not find '-' in line: %s", line.c_str());
@@ -29,6 +28,7 @@ void protect() {
         // Permissions are 4 characters
         auto perms = line.substr(spaceIdx + 1, 4);
         if (perms.find('r') == std::string::npos && perms.find('x') != std::string::npos && perms.find('w') == std::string::npos) {
+            logpf(ANDROID_LOG_DEBUG, "Line: %s", line.c_str());
             // If we have execute, and we do not have read, and we do not have write, we need to protect.
             logpf(ANDROID_LOG_INFO, "Protecting memory: 0x%lx - 0x%lx with perms: %s to: +rx", startAddr, endAddr, perms.c_str());
             if (mprotect(reinterpret_cast<void*>(startAddr), endAddr - startAddr, PROT_EXEC | PROT_READ) != 0) {
