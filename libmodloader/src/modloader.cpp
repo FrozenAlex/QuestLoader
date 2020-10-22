@@ -414,6 +414,8 @@ void Modloader::construct_mods() noexcept {
     logpfm(ANDROID_LOG_DEBUG, "libil2cpp path: %s", libIl2CppPath.data());
     // Protect at least once on startup
     protect();
+    // Open ourselves early to potentially fix some issues
+    dlopen(NULL, RTLD_NOW|RTLD_GLOBAL);
     logpfm(ANDROID_LOG_DEBUG, "Constructing mods from modloader path: '%s'", modloaderPath.data());
     bool modReady = true;
     if (!setDataDirs())
