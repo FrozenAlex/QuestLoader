@@ -329,11 +329,11 @@ bool Modloader::try_load_libs() {
     // List failed libs and try again
     // What we want to do here is while we haven't changed size of failed, we continue trying to load from failed.
     if (failed.size() > 0) {
-        std::vector<std::pair<std::string, const char*>> tempFailed;
         auto oldSize = failed.size() + 1;
         // While the new failed size is less than the old size, continue to try to load
         // If we reach a point where we cannot load any mods (deadlock) we will have equivalent oldSize and failed.size()
         while (failed.size() < oldSize && failed.size() != 0) {
+            std::vector<std::pair<std::string, const char*>> tempFailed;
             logpfm(ANDROID_LOG_WARN, "Failed libraries:");
             for (const auto& item : failed) {
                 auto str = (item.first + item.second).c_str();
@@ -384,11 +384,11 @@ bool Modloader::try_setup_mods() {
 
     // TODO: This matches the above
     if (failed.size() > 0) {
-        std::vector<std::pair<std::string, const char*>> tempFailed;
         auto oldSize = failed.size() + 1;
         // While the new failed size is less than the old size, continue to try to load
         // If we reach a point where we cannot load any mods (deadlock) we will have equivalent oldSize and failed.size()
         while (failed.size() < oldSize && failed.size() != 0) {
+            std::vector<std::pair<std::string, const char*>> tempFailed;
             logpfm(ANDROID_LOG_WARN, "Failed mods:");
             for (const auto& item : failed) {
                 auto* str = (item.first + item.second).c_str();
