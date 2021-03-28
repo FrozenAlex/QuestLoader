@@ -75,6 +75,8 @@ class Modloader {
         static bool copy(std::string_view pathToCopy);
         static bool try_load_libs();
         static bool try_setup_mods();
+        static bool try_load_recurse(std::vector<std::pair<std::string, const char*>>& failed, bool (*member)(std::string, const char*));
+        static bool lib_loader(std::string first, const char* second);
         static void* construct_mod(const char* filename);
         static bool create_mod(std::string modPath, const char* name);
         static void setup_mod(void *handle, ModInfo& modInfo);
@@ -291,6 +293,48 @@ bool Modloader::copy(std::string_view pathToCopy) {
     return true;
 }
 
+/// @brief Attempts to recursively load failed .so files from the provided list.
+/// Modifies the vector and calls attempt_load on each potentially loadable mod/lib
+bool Modloader::try_load_recurse(std::vector<std::pair<std::string, const char*>>& failed, bool (*attempt_load)(std::string first, const char* second)) {
+    if (failed.size() > 0) {
+        auto oldSize = failed.size() + 1;
+        // While the new failed size is less than the old size, continue to try to load
+        // If we reach a point where we cannot load any mods (deadlock) we will have equivalent oldSize and failed.size()
+        while (failed.size() < oldSize && failed.size() != 0) {
+            std::vector<std::pair<std::string, const char*>> tempFailed;
+            logpfm(ANDROID_LOG_WARN, "Failed List:");
+            for (const auto& item : failed) {
+                auto str = item.first + item.second;
+                logpfm(ANDROID_LOG_INFO, "Previously failed: %s Trying again...", str.c_str());
+                if (!attempt_load(item.first, item.second)) {
+                    // If we failed to open it again, we add it to the temporary list.
+                    logpfm(ANDROID_LOG_ERROR, "STILL Failed to dlopen: %s", str.c_str());
+                    tempFailed.emplace_back(item.first, item.second);
+                } else {
+                    logpfm(ANDROID_LOG_INFO, "Successfully loaded: %s", str.c_str());
+                }
+            }
+            oldSize = failed.size();
+            failed.clear();
+            failed = tempFailed;
+            logpfm(ANDROID_LOG_VERBOSE, "After completing pass, had: %lu failed, now have: %lu", oldSize, failed.size());
+        }
+        return failed.size() == 0;
+    }
+    return true;
+}
+
+bool Modloader::lib_loader(std::string name, const char* second) {
+    auto str = name + second;
+    auto* tmp = dlopen(str.c_str(), RTLD_LAZY | RTLD_LOCAL);
+    if (tmp == NULL) {
+        auto s = dlerror();
+        logpfm(ANDROID_LOG_ERROR, "Failed to dlopen: %s, dlerror: %s", str.c_str(), s == nullptr ? "NULL" : s);
+        return false;
+    }
+    return true;
+}
+
 // Responsible for loading libraries
 // Returns true on success (all libs loaded) false otherwise
 bool Modloader::try_load_libs() {
@@ -298,7 +342,7 @@ bool Modloader::try_load_libs() {
     // Failed to load libs
     std::vector<std::pair<std::string, const char*>> failed;
     
-    // Try to open libs again
+    // Try to open libs
     struct dirent* dp;
     DIR* dir = opendir(libsPath.c_str());
     if (dir == nullptr) {
@@ -310,14 +354,14 @@ bool Modloader::try_load_libs() {
             // This time this happens after all mods are copied so we can ensure proper linkage
             // dlopen each one
             if (strlen(dp->d_name) > 3 && !strcmp(dp->d_name + strlen(dp->d_name) - 3, ".so")) {
-                const char* str = (modTempPath + dp->d_name).c_str();
-                auto* tmp = dlopen(str, RTLD_LAZY | RTLD_LOCAL);
+                auto str = modTempPath + dp->d_name;
+                auto* tmp = dlopen(str.c_str(), RTLD_LAZY | RTLD_LOCAL);
                 if (tmp == NULL) {
                     auto s = dlerror();
-                    logpfm(ANDROID_LOG_ERROR, "Failed to dlopen: %s, dlerror: %s", str, s == nullptr ? "NULL" : s);
+                    logpfm(ANDROID_LOG_ERROR, "Failed to dlopen: %s, dlerror: %s", str.c_str(), s == nullptr ? "NULL" : s);
                     failed.emplace_back(modTempPath, dp->d_name);
                 } else {
-                    logpfm(ANDROID_LOG_INFO, "Successfully loaded lib: %s", str);
+                    logpfm(ANDROID_LOG_INFO, "Successfully loaded lib: %s", str.c_str());
                 }
                 // We shouldn't need to keep this handle anywhere, we can just throw it away without closing it.
                 // This should hopefully force the library to stay open
@@ -328,33 +372,7 @@ bool Modloader::try_load_libs() {
 
     // List failed libs and try again
     // What we want to do here is while we haven't changed size of failed, we continue trying to load from failed.
-    if (failed.size() > 0) {
-        auto oldSize = failed.size() + 1;
-        // While the new failed size is less than the old size, continue to try to load
-        // If we reach a point where we cannot load any mods (deadlock) we will have equivalent oldSize and failed.size()
-        while (failed.size() < oldSize && failed.size() != 0) {
-            std::vector<std::pair<std::string, const char*>> tempFailed;
-            logpfm(ANDROID_LOG_WARN, "Failed libraries:");
-            for (const auto& item : failed) {
-                auto str = (item.first + item.second).c_str();
-                logpfm(ANDROID_LOG_INFO, "Failed library: %s! Trying again...", str);
-                auto* tmp = dlopen(str, RTLD_LAZY | RTLD_LOCAL);
-                if (tmp == NULL) {
-                    auto s = dlerror();
-                    logpfm(ANDROID_LOG_ERROR, "Still failed to dlopen: %s dlerror: %s", str, s == nullptr ? "NULL" : s);
-                    tempFailed.emplace_back(item.first, item.second);
-                } else {
-                    logpfm(ANDROID_LOG_INFO, "Success! Opened library: %s Handle: %p", str, tmp);
-                }
-            }
-            oldSize = failed.size();
-            failed.clear();
-            failed = tempFailed;
-            logpfm(ANDROID_LOG_VERBOSE, "After completing pass, had: %lu failed mods, now have: %lu", oldSize, failed.size());
-        }
-        return failed.size() == 0;
-    }
-    return true;
+    return try_load_recurse(failed, lib_loader);
 }
 
 // Responsible for setting up mods
@@ -381,32 +399,7 @@ bool Modloader::try_setup_mods() {
         }
         closedir(dir);
     }
-
-    // TODO: This matches the above
-    if (failed.size() > 0) {
-        auto oldSize = failed.size() + 1;
-        // While the new failed size is less than the old size, continue to try to load
-        // If we reach a point where we cannot load any mods (deadlock) we will have equivalent oldSize and failed.size()
-        while (failed.size() < oldSize && failed.size() != 0) {
-            std::vector<std::pair<std::string, const char*>> tempFailed;
-            logpfm(ANDROID_LOG_WARN, "Failed mods:");
-            for (const auto& item : failed) {
-                auto* str = (item.first + item.second).c_str();
-                logpfm(ANDROID_LOG_INFO, "Failed mod: %s Trying again...", str);
-                if (!create_mod(item.first, item.second)) {
-                    logpfm(ANDROID_LOG_ERROR, "Still failed to dlopen: %s", str);
-                } else {
-                    logpfm(ANDROID_LOG_INFO, "Success! Opened mod: %s", str);
-                }
-            }
-            oldSize = failed.size();
-            failed.clear();
-            failed = tempFailed;
-            logpfm(ANDROID_LOG_VERBOSE, "After completing pass, has: %lu failed mods, now have: %lu", oldSize, failed.size());
-        }
-        return failed.size() == 0;
-    }
-    return true;
+    return try_load_recurse(failed, Modloader::create_mod);
 }
 
 void Modloader::construct_mods() noexcept {
