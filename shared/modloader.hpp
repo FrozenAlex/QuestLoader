@@ -7,15 +7,23 @@
 #include <string>
 #include <string_view>
 
-typedef struct ModInfo {
+struct ModInfo {
     std::string id;
     std::string version;
-} ModInfo;
+};
 
-typedef struct ModloaderInfo {
+struct ModloaderInfo {
     std::string name;
     std::string tag;
-} ModloaderInfo;
+};
+
+// C API for nice rust linkage
+extern "C" const char* get_info_id(ModInfo* instance);
+extern "C" void set_info_id(ModInfo* instance, const char* name);
+extern "C" const char* get_info_version(ModInfo* instance);
+extern "C" void set_info_version(ModInfo* instance, const char* version);
+extern "C" const char* get_modloader_name(ModloaderInfo* instance);
+extern "C" const char* get_modloader_tag(ModloaderInfo* instance);
 
 class Mod;
 
@@ -31,7 +39,7 @@ class Modloader {
         // Example return: com.beatgames.beatsaber
         static const std::string getApplicationId();
         // Returns whether all mods on this modloader have been loaded or not
-        static const bool getAllConstructed();
+        static bool getAllConstructed();
         // Modloader info
         static const ModloaderInfo getInfo();
         // A map of id to mods managed by this modloader
@@ -39,9 +47,13 @@ class Modloader {
         // Require another mod to be loaded, should only be called AFTER mods have been constructed
         // Will block until the required mod is loaded, if it exists.
         // If it does not exist, or this was called before mod loading was complete, returns immediately.
-        static void requireMod(const ModInfo&);
+        static bool requireMod(const ModInfo&);
         // Same as requireMod(const ModInfo&) except uses an ID and a version string
-        static void requireMod(std::string_view id, std::string_view version);
+        static bool requireMod(std::string_view id, std::string_view version);
+        // Require another mod to be loaded, should only be called AFTER mods have been constructed
+        // Will block until all versions of the specified id are loaded, if any exist.
+        // If none exist, or if this was called before mod loading was complete (in the case of a recursive load) returns immediately.
+        static bool requireMod(std::string_view id);
 };
 #endif
 
@@ -53,7 +65,7 @@ class Mod {
         const std::string name;
         const std::string pathName;
         const ModInfo info;
-        const bool get_loaded() const;
+        bool get_loaded() const;
         bool operator==(const Mod& m) const {
             return info.id == m.info.id && info.version == m.info.version;
         }

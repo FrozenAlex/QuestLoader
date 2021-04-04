@@ -52,8 +52,9 @@ class Modloader {
         static bool getAllConstructed();
         static const ModloaderInfo getInfo();
         static const std::unordered_map<std::string, const Mod> getMods();
-        static void requireMod(const ModInfo&);
-        static void requireMod(std::string_view id, std::string_view version);
+        static bool requireMod(const ModInfo&);
+        static bool requireMod(std::string_view id, std::string_view version);
+        static bool requireMod(std::string_view id);
         // New members, specific to .cpp only        
         static void init_mods() noexcept;
         static void load_mods() noexcept;
@@ -577,10 +578,35 @@ void Modloader::setInfo(ModloaderInfo& info) {
     Modloader::info = info;
 }
 
-void Modloader::requireMod(const ModInfo& info) {
-    Modloader::requireMod(info.id, info.version);
+bool Modloader::requireMod(std::string_view id) {
+    if (!allConstructed) {
+        // Do nothing if not all mods are constructed
+        return false;
+    }
+    logpfm(ANDROID_LOG_VERBOSE, "Requiring mod: %s", id.data());
+    auto m = mods.find(id.data());
+    if (m != mods.end()) {
+        logpfm(ANDROID_LOG_VERBOSE, "Found matching mod!");
+        auto loading = loadingMods.find(m->second);
+        if (loading != loadingMods.end()) {
+            // If the mod is in our loadingMods, return early
+            logpfm(ANDROID_LOG_VERBOSE, "Mod already in loadingMods (loading or is loaded!)");
+            return true;
+        }
+        if (!m->second.get_loaded()) {
+            // If the mod isn't already loaded, load it.
+            logpfm(ANDROID_LOG_VERBOSE, "Loading mod...");
+            loadingMods.insert(m->second);
+            m->second.load_mod();
+        }
+        return true;
+    }
+    return false;
 }
-void Modloader::requireMod(std::string_view id, std::string_view version) {
+bool Modloader::requireMod(const ModInfo& info) {
+    return Modloader::requireMod(info.id, info.version);
+}
+bool Modloader::requireMod(std::string_view id, std::string_view version) {
     // Find the matching mod in our list of constructed mods
     // If it doesn't exist, exit immediately.
     // If we find that a mod that is being required requires a mod that requires us, we have deadlock
@@ -588,30 +614,36 @@ void Modloader::requireMod(std::string_view id, std::string_view version) {
     // loadingMods is a vector of all mods that are being loaded at the moment.
     // If the mod that we are attempting to require is already in this list, we return immediately.
     // Otherwise, we invoke the mod.load function on that mod and let it run to completion.
-    logpf(ANDROID_LOG_VERBOSE, "Requiring mod: %s", id.data());
+    if (!allConstructed) {
+        // Do nothing if not all mods are constructed
+        return false;
+    }
+    logpfm(ANDROID_LOG_VERBOSE, "Requiring mod: %s", id.data());
     auto m = mods.find(id.data());
     if (m != mods.end()) {
-        logpf(ANDROID_LOG_VERBOSE, "Found matching mod!");
+        logpfm(ANDROID_LOG_VERBOSE, "Found matching mod!");
         // Ensure version matches (a version match should be specific to the version for now)
         // Eventually, this should check if there exists a version >= the provided one.
         // TODO: ^
         if (m->second.info.version != version) {
-            logpf(ANDROID_LOG_VERBOSE, "Version mismatch: desired: %s, actual: %s", version.data(), m->second.info.version.c_str());
-            return;
+            logpfm(ANDROID_LOG_VERBOSE, "Version mismatch: desired: %s, actual: %s", version.data(), m->second.info.version.c_str());
+            return false;
         }
         auto loading = loadingMods.find(m->second);
         if (loading != loadingMods.end()) {
             // If the mod is in our loadingMods, return early
-            logpf(ANDROID_LOG_VERBOSE, "Mod already in loadingMods (loading or is loaded!)");
-            return;
+            logpfm(ANDROID_LOG_VERBOSE, "Mod already in loadingMods (loading or is loaded!)");
+            return true;
         }
         if (!m->second.get_loaded()) {
             // If the mod isn't already loaded, load it.
-            logpf(ANDROID_LOG_VERBOSE, "Loading mod...");
+            logpfm(ANDROID_LOG_VERBOSE, "Loading mod...");
             loadingMods.insert(m->second);
             m->second.load_mod();
         }
+        return true;
     }
+    return false;
 }
 #pragma endregion
 
@@ -693,6 +725,34 @@ extern "C" void modloader_accept_unity_handle(void* uhandle) noexcept {
     logpf(ANDROID_LOG_VERBOSE, "modloader_accept_unity_handle called with uhandle: 0x%p", uhandle);
 
     init_all_mods();
+}
+
+#pragma region C API
+extern "C" const char* get_info_id(ModInfo* instance) {
+    auto* ret = new char[instance->id.length() + 1];
+    strcpy(ret, instance->id.c_str());
+    return ret;
+}
+extern "C" void set_info_id(ModInfo* instance, const char* name) {
+    instance->id = name;
+}
+extern "C" const char* get_info_version(ModInfo* instance) {
+    auto* ret = new char[instance->version.length() + 1];
+    strcpy(ret, instance->version.c_str());
+    return ret;
+}
+extern "C" void set_info_version(ModInfo* instance, const char* version) {
+    instance->version = version;
+}
+extern "C" const char* get_modloader_name(ModloaderInfo* instance) {
+    auto* ret = new char[instance->name.length() + 1];
+    strcpy(ret, instance->name.c_str());
+    return ret;
+}
+extern "C" const char* get_modloader_tag(ModloaderInfo* instance) {
+    auto* ret = new char[instance->tag.length() + 1];
+    strcpy(ret, instance->tag.c_str());
+    return ret;
 }
 
 CHECK_MODLOADER_PRELOAD;
