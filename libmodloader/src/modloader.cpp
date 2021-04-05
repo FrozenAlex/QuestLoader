@@ -729,30 +729,22 @@ extern "C" void modloader_accept_unity_handle(void* uhandle) noexcept {
 
 #pragma region C API
 extern "C" const char* get_info_id(ModInfo* instance) {
-    auto* ret = new char[instance->id.length() + 1];
-    strcpy(ret, instance->id.c_str());
-    return ret;
+    return instance->id.c_str();
 }
 extern "C" void set_info_id(ModInfo* instance, const char* name) {
     instance->id = name;
 }
 extern "C" const char* get_info_version(ModInfo* instance) {
-    auto* ret = new char[instance->version.length() + 1];
-    strcpy(ret, instance->version.c_str());
-    return ret;
+    return instance->version.c_str();
 }
 extern "C" void set_info_version(ModInfo* instance, const char* version) {
     instance->version = version;
 }
 extern "C" const char* get_modloader_name(ModloaderInfo* instance) {
-    auto* ret = new char[instance->name.length() + 1];
-    strcpy(ret, instance->name.c_str());
-    return ret;
+    return instance->name.c_str();
 }
 extern "C" const char* get_modloader_tag(ModloaderInfo* instance) {
-    auto* ret = new char[instance->tag.length() + 1];
-    strcpy(ret, instance->tag.c_str());
-    return ret;
+    return instance->tag.c_str();
 }
 
 CHECK_MODLOADER_PRELOAD;

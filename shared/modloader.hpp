@@ -18,6 +18,7 @@ struct ModloaderInfo {
 };
 
 // C API for nice rust linkage
+// Returned C strings are NOT copied, input C strings ARE copied.
 extern "C" const char* get_info_id(ModInfo* instance);
 extern "C" void set_info_id(ModInfo* instance, const char* name);
 extern "C" const char* get_info_version(ModInfo* instance);
