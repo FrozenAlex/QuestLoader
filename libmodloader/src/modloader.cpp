@@ -76,7 +76,7 @@ class Modloader {
         static bool copy(std::string_view pathToCopy);
         static bool try_load_libs();
         static bool try_setup_mods();
-        static bool try_load_recurse(std::vector<std::pair<std::string, const char*>>& failed, bool (*member)(std::string, const char*));
+        static bool try_load_recurse(std::vector<std::pair<std::string, std::string>>& failed, bool (*attempt_load)(std::string first, const char* second));
         static bool lib_loader(std::string first, const char* second);
         static void* construct_mod(const char* filename);
         static bool create_mod(std::string modPath, const char* name);
@@ -201,9 +201,9 @@ bool Modloader::setDataDirs()
 }
 
 void Modloader::copy_to_temp(std::string path, const char* filename) {
-    auto full_path = (path + filename).c_str();
-    logpfm(ANDROID_LOG_INFO, "Copying file: %s", full_path);
-    int infile = open(full_path, O_RDONLY);
+    auto full_path = path + filename;
+    logpfm(ANDROID_LOG_INFO, "Copying file: %s", full_path.c_str());
+    int infile = open(full_path.c_str(), O_RDONLY);
     off_t filesize = lseek(infile, 0, SEEK_END);
     lseek(infile, 0, SEEK_SET);
 
@@ -296,18 +296,18 @@ bool Modloader::copy(std::string_view pathToCopy) {
 
 /// @brief Attempts to recursively load failed .so files from the provided list.
 /// Modifies the vector and calls attempt_load on each potentially loadable mod/lib
-bool Modloader::try_load_recurse(std::vector<std::pair<std::string, const char*>>& failed, bool (*attempt_load)(std::string first, const char* second)) {
+bool Modloader::try_load_recurse(std::vector<std::pair<std::string, std::string>>& failed, bool (*attempt_load)(std::string first, const char* second)) {
     if (failed.size() > 0) {
         auto oldSize = failed.size() + 1;
         // While the new failed size is less than the old size, continue to try to load
         // If we reach a point where we cannot load any mods (deadlock) we will have equivalent oldSize and failed.size()
         while (failed.size() < oldSize && failed.size() != 0) {
-            std::vector<std::pair<std::string, const char*>> tempFailed;
+            std::vector<std::pair<std::string, std::string>> tempFailed;
             logpfm(ANDROID_LOG_WARN, "Failed List:");
             for (const auto& item : failed) {
                 auto str = item.first + item.second;
                 logpfm(ANDROID_LOG_INFO, "Previously failed: %s Trying again...", str.c_str());
-                if (!attempt_load(item.first, item.second)) {
+                if (!attempt_load(item.first, item.second.c_str())) {
                     // If we failed to open it again, we add it to the temporary list.
                     logpfm(ANDROID_LOG_ERROR, "STILL Failed to dlopen: %s", str.c_str());
                     tempFailed.emplace_back(item.first, item.second);
@@ -318,7 +318,11 @@ bool Modloader::try_load_recurse(std::vector<std::pair<std::string, const char*>
             oldSize = failed.size();
             failed.clear();
             failed = tempFailed;
+#ifdef __aarch64__
             logpfm(ANDROID_LOG_VERBOSE, "After completing pass, had: %lu failed, now have: %lu", oldSize, failed.size());
+#else
+            logpfm(ANDROID_LOG_VERBOSE, "After completing pass, had: %u failed, now have: %u", oldSize, failed.size());
+#endif
         }
         return failed.size() == 0;
     }
@@ -341,7 +345,7 @@ bool Modloader::lib_loader(std::string name, const char* second) {
 bool Modloader::try_load_libs() {
     logpfm(ANDROID_LOG_INFO, "Loading all libs!");
     // Failed to load libs
-    std::vector<std::pair<std::string, const char*>> failed;
+    std::vector<std::pair<std::string, std::string>> failed;
     
     // Try to open libs
     struct dirent* dp;
@@ -381,7 +385,7 @@ bool Modloader::try_load_libs() {
 bool Modloader::try_setup_mods() {
     logpfm(ANDROID_LOG_INFO, "Constructing all mods!");
     // Failed mods
-    std::vector<std::pair<std::string, const char*>> failed;
+    std::vector<std::pair<std::string, std::string>> failed;
     // Iterate over mods and attempt to construct them
     struct dirent* dp;
     DIR* dir = opendir(modPath.c_str());
@@ -447,12 +451,12 @@ void Modloader::construct_mods() noexcept {
     } else {
         while ((dp = readdir(dir)) != NULL) {
             if (strlen(dp->d_name) > 3 && !strcmp(dp->d_name + strlen(dp->d_name) - 3, ".so")) {
-                const char* str = (modTempPath + dp->d_name).c_str();
+                auto str = modTempPath + dp->d_name;
                 // Delete all .so files in our modTempPath
-                if (unlink(str)) {
-                    logpfm(ANDROID_LOG_WARN, "Failed to delete: %s errno: %i, msg: %s", str, errno, strerror(errno));
+                if (unlink(str.c_str())) {
+                    logpfm(ANDROID_LOG_WARN, "Failed to delete: %s errno: %i, msg: %s", str.c_str(), errno, strerror(errno));
                 } else {
-                    logpfm(ANDROID_LOG_VERBOSE, "Deleted: %s", str);
+                    logpfm(ANDROID_LOG_VERBOSE, "Deleted: %s", str.c_str());
                 }
             }
         }
