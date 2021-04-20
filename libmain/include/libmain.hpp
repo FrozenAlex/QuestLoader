@@ -92,7 +92,7 @@ namespace jni {
         }
         template<typename IfaceWrap, typename FType, typename ...Args>
         auto invoke_original(IfaceWrap* self, FType* remove_ptr_ref_t<decltype(self->functions)>::* member, Args&& ...args) {
-            using IfacePtr = remove_ptr_ref_t<decltype(self->functions)>*;
+            // using IfacePtr = remove_ptr_ref_t<decltype(self->functions)>*;
             auto original = interface_original(self->functions);
             return ((*original)->*member)(reinterpret_cast<IfaceWrap*>(original), std::forward<Args>(args)...);
         }

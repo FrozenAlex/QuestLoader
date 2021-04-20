@@ -29,11 +29,11 @@ rwildcard=$(wildcard $1$2) $(foreach d,$(wildcard $1*),$(call rwildcard,$d/,$2))
 
 LOCAL_LDLIBS    := -llog
 LOCAL_MODULE    := modloader
-LOCAL_CPPFLAGS  := -std=c++2a -fno-rtti -Os
-
+LOCAL_CPPFLAGS  := -fno-rtti -Wall -Wextra -Werror -Wno-unused-function -Wno-unused-parameter -Wno-sign-compare -O3
+LOCAL_CPP_FEATURES := exceptions
 LOCAL_SHARED_LIBRARIES := main
 LOCAL_C_INCLUDES := ./include ./src 
-LOCAL_SRC_FILES  := $(call rwildcard,src/,*.cpp) $(call rwildcard,src/,*.s) ../../beatsaber-hook/shared/inline-hook/inlineHook.c ../../beatsaber-hook/shared/inline-hook/relocate.c ../../beatsaber-hook/shared/inline-hook/And64InlineHook.cpp
+LOCAL_SRC_FILES  := $(call rwildcard,src/,*.cpp) ../../beatsaber-hook/shared/inline-hook/inlineHook.c ../../beatsaber-hook/shared/inline-hook/relocate.c ../../beatsaber-hook/shared/inline-hook/And64InlineHook.cpp
 
 
 include $(BUILD_SHARED_LIBRARY)
