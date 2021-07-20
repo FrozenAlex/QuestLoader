@@ -54,6 +54,8 @@ class Modloader {
         static bool requireMod(const ModInfo&);
         static bool requireMod(std::string_view id, std::string_view version);
         static bool requireMod(std::string_view id);
+        static const std::string getModloaderPath();
+        static const std::string getDestinationPath();
         // New members, specific to .cpp only        
         static void init_mods() noexcept;
         static void load_mods() noexcept;
@@ -178,6 +180,15 @@ int mkpath(std::string stringPath, mode_t mode) {
 
 // Modloader functions
 #pragma region Modloader Functions
+
+const std::string Modloader::getModloaderPath() {
+    return modloaderPath;
+}
+
+const std::string Modloader::getDestinationPath() {
+    return modTempPath;
+}
+
 // MUST BE CALLED BEFORE LOADING MODS
 bool Modloader::setDataDirs()
 {
@@ -188,10 +199,17 @@ bool Modloader::setDataDirs()
         fread(application_id, sizeof(application_id), 1, cmdline);
         fclose(cmdline);
         trimWhitespace(application_id);
-        applicationId = std::string(application_id);
+        applicationId = application_id;
         modPath = string_format(MOD_PATH_FMT, application_id);
         libsPath = string_format(LIBS_PATH_FMT, application_id);
-        modTempPath = modloaderPath;
+        char tmp[PATH_MAX];
+        auto sz = readlink("/proc/self/cwd", tmp, sizeof(tmp));
+        if (sz < 0 || sz == PATH_MAX) {
+            logpfm(ANDROID_LOG_ERROR, "Could not readlink of: /proc/self/cwd! error: %s", strerror(errno));
+            return false;
+        }
+        tmp[sz] = '\0';
+        modTempPath.assign(tmp);
         system((std::string("mkdir -p -m +rwx ") + modTempPath).c_str());
         return true;
     } else {

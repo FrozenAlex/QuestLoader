@@ -39,6 +39,14 @@ class Modloader {
         // Check Modloader::getAllConstructed() for validity
         // Example return: com.beatgames.beatsaber
         static const std::string getApplicationId();
+        // Returns the path the modloader is located in, should only be called AFTER mods have been constructed
+        // Check Modloader::getAllConstructed() for validity
+        // Example return: /data/app/com.beatgames.beatsaber-HASH/lib/arm64
+        static const std::string getModloaderPath();
+        // Returns the path the destination directory for dlopened mods/libs, should only be called AFTER mods have been constructed
+        // Check Modloader::getAllConstructed() for validity
+        // Example return: /data/data/com.beatgames.beatsaber
+        static const std::string getDestinationPath();
         // Returns whether all mods on this modloader have been loaded or not
         static bool getAllConstructed();
         // Modloader info
