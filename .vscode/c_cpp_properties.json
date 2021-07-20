@@ -6,19 +6,18 @@
         "UNICODE",
         "_UNICODE",
         "VERSION=\"1.0.0\"",
-        "ID=\"modloader\""
+        "ID=\"modloader\"",
+        "__aarch64__"
       ],
       "includePath": [
         "${workspaceFolder}/**",
+        "c:/android-ndk-r22/**",
         "./shared",
         "./extern"
       ],
-      "name": "Win32",
-      "windowsSdkVersion": "10.0.18362.0",
-      "compilerPath": "C:/Program Files (x86)/Microsoft Visual Studio/2019/Preview/VC/Tools/MSVC/14.27.28919/bin/Hostx64/x64/cl.exe",
       "cStandard": "c11",
-      "cppStandard": "c++17",
-      "intelliSenseMode": "msvc-x64"
+      "cppStandard": "c++20",
+      "intelliSenseMode": "gcc-x64"
     }
   ],
   "version": 4

@@ -41,7 +41,6 @@
 
 #define MOD_PATH_FMT "/sdcard/Android/data/%s/files/mods/"
 #define LIBS_PATH_FMT "/sdcard/Android/data/%s/files/libs/"
-#define MOD_TEMP_PATH_FMT "/data/data/%s/"
 
 // There should only be ONE modloader PER GAME
 // Ideally, there is only ONE modloader per libmodloader.so
@@ -192,8 +191,8 @@ bool Modloader::setDataDirs()
         applicationId = std::string(application_id);
         modPath = string_format(MOD_PATH_FMT, application_id);
         libsPath = string_format(LIBS_PATH_FMT, application_id);
-        modTempPath = string_format(MOD_TEMP_PATH_FMT, application_id);
-        system((std::string("mkdir -p -m +rwx ") + modTempPath.data()).c_str());
+        modTempPath = modloaderPath;
+        system((std::string("mkdir -p -m +rwx ") + modTempPath).c_str());
         return true;
     } else {
         return false;
@@ -409,12 +408,12 @@ bool Modloader::try_setup_mods() {
 
 void Modloader::construct_mods() noexcept {
     libIl2CppPath = modloaderPath + "/libil2cpp.so";
-    logpfm(ANDROID_LOG_DEBUG, "libil2cpp path: %s", libIl2CppPath.data());
+    logpfm(ANDROID_LOG_DEBUG, "libil2cpp path: %s", libIl2CppPath.c_str());
     // Protect at least once on startup
     protect();
     // Open ourselves early to potentially fix some issues
     dlopen(NULL, RTLD_NOW|RTLD_GLOBAL);
-    logpfm(ANDROID_LOG_DEBUG, "Constructing mods from modloader path: '%s'", modloaderPath.data());
+    logpfm(ANDROID_LOG_DEBUG, "Constructing mods from modloader path: '%s'", modloaderPath.c_str());
     bool modReady = true;
     if (!setDataDirs())
     {
