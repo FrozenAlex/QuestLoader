@@ -6,6 +6,7 @@
 #include <unordered_map>
 #include <string>
 #include <string_view>
+#include <jni.h>
 
 struct ModInfo {
     std::string id;
@@ -47,6 +48,8 @@ class Modloader {
         // Check Modloader::getAllConstructed() for validity
         // Example return: /data/data/com.beatgames.beatsaber
         static const std::string getDestinationPath();
+        // Returns the JNI for further use.
+        static JNIEnv* getJni();
         // Returns whether all mods on this modloader have been loaded or not
         static bool getAllConstructed();
         // Modloader info
