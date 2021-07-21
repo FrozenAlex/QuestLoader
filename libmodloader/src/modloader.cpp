@@ -146,8 +146,8 @@ __tmp; })
 
 static std::optional<jstring> getDestination(JNIEnv* env) {
     auto envClass = NULLOPT_UNLESS(env->FindClass("android/os/Environment"), "Failed to find android.os.Environment!");
-    auto dataMethod = NULLOPT_UNLESS(env->GetStaticMethodID(envClass, "getDataDirectory", "()Ljava/lang/File;"), "Failed to find Environment.getDataDirectory!");
-    auto fileClass = NULLOPT_UNLESS(env->FindClass("java/lang/File"), "Failed to find java.lang.File!");
+    auto dataMethod = NULLOPT_UNLESS(env->GetStaticMethodID(envClass, "getDataDirectory", "()Ljava/io/File;"), "Failed to find Environment.getDataDirectory!");
+    auto fileClass = NULLOPT_UNLESS(env->FindClass("java/io/File"), "Failed to find java.io.File!");
     auto absDirMethod = NULLOPT_UNLESS(env->GetMethodID(fileClass, "getAbsolutePath", "()Ljava/lang/String;"), "Failed to find File.getAbsolutePath()!");
     auto file = NULLOPT_UNLESS(env->CallStaticObjectMethod(envClass, dataMethod), "Returned result from getDataDirectory is null!");
     auto str = NULLOPT_UNLESS(env->CallObjectMethod(file, absDirMethod), "Returned result from getAbsolutePath is null!");
