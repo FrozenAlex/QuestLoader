@@ -145,12 +145,19 @@ if (!__tmp) {logpf(ANDROID_LOG_WARN, __VA_ARGS__); return std::nullopt;} \
 __tmp; })
 
 static std::optional<jstring> getDestination(JNIEnv* env) {
-    auto envClass = NULLOPT_UNLESS(env->FindClass("android/os/Environment"), "Failed to find android.os.Environment!");
-    auto dataMethod = NULLOPT_UNLESS(env->GetStaticMethodID(envClass, "getDataDirectory", "()Ljava/io/File;"), "Failed to find Environment.getDataDirectory!");
+    auto activityThreadClass = NULLOPT_UNLESS(env->FindClass("android/app/ActivityThread"), "Failed to find android.app.ActivityThread!");
+    auto currentActivityThreadMethod = NULLOPT_UNLESS(env->GetStaticMethodID(activityThreadClass, "currentActivityThread", "()Landroid/app/ActivityThread;"), "Failed to find ActivityThread.currentActivityThread");
+    auto contextClass = NULLOPT_UNLESS(env->FindClass("android/content/Context"), "Failed to find android.context.Context!");
+    auto getApplicationMethod = NULLOPT_UNLESS(env->GetMethodID(activityThreadClass, "getApplication", "()Landroid/app/Application;"), "Failed to find Application.getApplication");
+    auto filesDirMethod = NULLOPT_UNLESS(env->GetMethodID(contextClass, "getFilesDir", "()Ljava/io/File;"), "Failed to find Context.getFilesDir()!");
     auto fileClass = NULLOPT_UNLESS(env->FindClass("java/io/File"), "Failed to find java.io.File!");
     auto absDirMethod = NULLOPT_UNLESS(env->GetMethodID(fileClass, "getAbsolutePath", "()Ljava/lang/String;"), "Failed to find File.getAbsolutePath()!");
-    auto file = NULLOPT_UNLESS(env->CallStaticObjectMethod(envClass, dataMethod), "Returned result from getDataDirectory is null!");
+
+    auto at = NULLOPT_UNLESS(env->CallStaticObjectMethod(activityThreadClass, currentActivityThreadMethod), "Returned result from currentActivityThread is null!");
+    auto context = NULLOPT_UNLESS(env->CallObjectMethod(at, getApplicationMethod), "Returned result from getApplication is null!");
+    auto file = NULLOPT_UNLESS(env->CallObjectMethod(context, filesDirMethod), "Returned result from getFilesDir is null!");
     auto str = NULLOPT_UNLESS(env->CallObjectMethod(file, absDirMethod), "Returned result from getAbsolutePath is null!");
+
     return reinterpret_cast<jstring>(str);
 }
 
@@ -227,6 +234,8 @@ bool Modloader::setDataDirs()
         if (res) {
             auto str = modloaderEnv->GetStringUTFChars(*res, nullptr);
             modTempPath = str;
+            modTempPath.push_back('/');
+            logpfm(ANDROID_LOG_INFO, "Destination path: %s", modTempPath.c_str());
             // string is copied, so free the allocated version
             modloaderEnv->ReleaseStringUTFChars(*res, str);
         } else {
